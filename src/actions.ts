@@ -317,7 +317,10 @@ export function createActions(app: App): ActionRegistry {
       id: 'layer.mergeDown',
       label: 'Merge down',
       icon: 'merge-down',
-      run: () => mergeDown(doc(), hist()) || e.toast('There is no layer below'),
+      run: () => {
+        const problem = mergeDown(doc(), hist());
+        if (problem) e.toast(problem);
+      },
       enabled: () => doc().activeLayerIndex > 0,
     },
     {

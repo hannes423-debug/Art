@@ -133,16 +133,20 @@ export function setLayerProps(doc: ArtDocument, history: History, layer: Layer, 
   );
 }
 
-/** Merges the active layer into the layer below it (all frames). */
-export function mergeDown(doc: ArtDocument, history: History): boolean {
+/**
+ * Merges the active layer into the layer below it (all frames). Returns an
+ * explanation when the merge is not possible, or null on success.
+ */
+export function mergeDown(doc: ArtDocument, history: History): string | null {
   const upper = doc.activeLayer;
   const index = doc.layers.indexOf(upper);
-  if (index <= 0) return false;
+  if (index <= 0) return 'There is no layer below to merge into';
+  if (!upper.visible) return 'Show the layer before merging it down';
   const lower = doc.layers[index - 1];
   const oldData = lower.cels.map((c) => c.data);
   const merged = lower.cels.map((cel, f) => {
     const top = upper.cels[f].data;
-    if (!top || !upper.visible) return cel.data;
+    if (!top) return cel.data;
     const out = cel.data ? cel.data.slice() : allocPixels(doc.width, doc.height);
     blendImage(out, doc.width, doc.height, top, doc.width, doc.height, 0, 0, upper.opacity, upper.blendMode);
     return out;
@@ -167,7 +171,7 @@ export function mergeDown(doc: ArtDocument, history: History): boolean {
       bytesOfLayer(upper) + bytesOfLayer(lower),
     ),
   );
-  return true;
+  return null;
 }
 
 /** Flattens all visible layers into one (hidden layers are discarded). */

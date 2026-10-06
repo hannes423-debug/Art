@@ -40,7 +40,8 @@ export class LayersPanel {
     const up = iconButton('chevron-up', 'Move layer up', () => this.shift(1));
     const down = iconButton('chevron-down', 'Move layer down', () => this.shift(-1));
     const merge = iconButton('merge-down', 'Merge down', () => {
-      if (!mergeDown(editor.doc, editor.history)) editor.toast('There is no layer below to merge into');
+      const problem = mergeDown(editor.doc, editor.history);
+      if (problem) editor.toast(problem);
     });
     this.el = h(
       'section',

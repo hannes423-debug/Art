@@ -185,3 +185,27 @@ describe('keyboard shortcuts', () => {
     expect(eventCombo(ev('Delete'))).toBe('delete');
   });
 });
+
+describe('layer operations', () => {
+  it('merges down exactly, refuses hidden layers, and undoes cleanly', async () => {
+    const { mergeDown, addLayer } = await import('../../src/ops');
+    const d = ArtDocument.createBlank(2, 1, 'T', { r: 0, g: 0, b: 255, a: 255 });
+    const h = new History();
+    const top = addLayer(d, h);
+    top.cels[0].ensureData().set([255, 0, 0, 255], 0);
+    top.opacity = 0.5;
+    top.visible = false;
+    expect(mergeDown(d, h)).toMatch(/Show the layer/);
+    top.visible = true;
+    expect(mergeDown(d, h)).toBeNull();
+    expect(d.layers).toHaveLength(1);
+    expect(d.activeCel.getPixel(0, 0)).toEqual([128, 0, 128, 255]);
+    expect(d.activeCel.getPixel(1, 0)).toEqual([0, 0, 255, 255]);
+    h.undo();
+    expect(d.layers).toHaveLength(2);
+    expect(d.layers[0].cels[0].getPixel(0, 0)).toEqual([0, 0, 255, 255]);
+    expect(d.layers[1].cels[0].getPixel(0, 0)).toEqual([255, 0, 0, 255]);
+    d.setActiveLayer(d.layers[0]);
+    expect(mergeDown(d, h)).toMatch(/no layer below/);
+  });
+});
