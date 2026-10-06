@@ -264,12 +264,15 @@ export class CanvasInput {
       const tool = this.activeTool!;
       // A cancelled finger stroke is discarded; pen/mouse strokes are kept.
       if (cancelled && e.pointerType === 'touch') tool.cancel();
-      else tool.up(this.toPointer(e));
+      else {
+        tool.up(this.toPointer(e));
+        // A completed stroke is never a tap (no accidental undo).
+        this.tap = null;
+      }
       this.mode = 'idle';
       this.toolPointerId = null;
       this.activeTool = null;
       if (e.pointerType === 'touch') this.editor.tool.hover(null);
-      this.maybeEndTap(e);
       return;
     }
     if (this.mode === 'pan' && e.pointerType !== 'touch') {

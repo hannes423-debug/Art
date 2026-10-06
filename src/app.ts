@@ -98,7 +98,10 @@ export class App {
     this.layersPanel = new LayersPanel(e);
     this.timeline = new Timeline(e);
     this.statusbar = new StatusBar(e);
-    this.toolbar.onColorClick = () => (this.layout === 'mobile' ? this.openDrawer('colors') : this.colorPanel.el.scrollIntoView({ block: 'nearest' }));
+    this.toolbar.onColorClick = () => {
+      if (this.layout === 'mobile') this.openDrawer('colors');
+      else if (!e.settings.sidePanel) this.toggleSidePanel();
+    };
     this.toolbar.onToolReselect = () => {
       if (this.layout === 'mobile') this.optionsBar.openSheet();
     };
@@ -171,10 +174,7 @@ export class App {
     // --- events
     e.on('toast', ({ message, error }) => this.toast(message, error));
     e.on('modified', () => this.updateTitle());
-    e.on('document', () => {
-      this.updateTitle();
-      if (this.canvasOnly && this.layout === 'mobile') return;
-    });
+    e.on('document', () => this.updateTitle());
     e.history.on('change', () => this.updateUndo());
     e.on('view', () => this.showZoomHud());
     e.on('settings', () => this.applyPanels());
@@ -423,6 +423,11 @@ export class App {
     }
     const action = this.actions.match(ev);
     if (!action) return;
+    if (this.input.busy && !action.id.startsWith('view.')) {
+      // Mid-stroke: only view navigation may run (undo would corrupt the stroke).
+      ev.preventDefault();
+      return;
+    }
     if (action.id === 'view.canvasOnly') {
       // Keep Tab for focus navigation when a control has focus.
       const a = document.activeElement;
@@ -605,7 +610,8 @@ export class App {
   async showProjects(): Promise<void> {
     let projects: ProjectMeta[] = [];
     try {
-      await this.files.flushCurrent();
+      this.editor.commitFloating();
+      if (this.editor.modified) await this.files.saveToLibrary(false);
       projects = await this.files.listLibrary();
     } catch (err) {
       this.toast(`The project library is not available: ${err instanceof Error ? err.message : err}`, true);

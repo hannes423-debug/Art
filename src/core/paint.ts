@@ -19,11 +19,16 @@ export interface PaintParams {
 let scratch: Uint8Array | null = null;
 let scratchInUse = false;
 
-function acquireMask(size: number): Uint8Array {
-  if (scratchInUse) throw new Error('Only one paint session may be active at a time');
+/**
+ * Coverage masks are document-sized, so one is reused between edits (and
+ * cleared after each). If a session is somehow still open, a private mask
+ * is used instead so painting can never get stuck.
+ */
+function acquireMask(size: number): { mask: Uint8Array; shared: boolean } {
+  if (scratchInUse) return { mask: new Uint8Array(size), shared: false };
   if (!scratch || scratch.length !== size) scratch = new Uint8Array(size);
   scratchInUse = true;
-  return scratch;
+  return { mask: scratch, shared: true };
 }
 
 /**
@@ -58,8 +63,12 @@ export class PaintSession {
     this.params = params;
     this.recorder = new TileRecorder(surface);
     this.selMask = selection?.mask ?? null;
-    this.mask = acquireMask(this.width * this.height);
+    const m = acquireMask(this.width * this.height);
+    this.mask = m.mask;
+    this.sharedMask = m.shared;
   }
+
+  private readonly sharedMask: boolean;
 
   /** Marks mask changes inside r for the next apply(). */
   markDirty(r: Rect): void {
@@ -290,6 +299,7 @@ export class PaintSession {
     this.closed = true;
     const t = this.recorder.bounds();
     const area = unionRect(t, this.touched);
+    if (!this.sharedMask) return;
     if (area) {
       for (let y = area.y; y < area.y + area.h; y++) this.mask.fill(0, y * this.width + area.x, y * this.width + area.x + area.w);
     }

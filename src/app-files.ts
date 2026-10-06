@@ -21,6 +21,7 @@ import {
   saveProject,
   setLastProjectId,
 } from './io/storage';
+import { confirmDialog } from './ui/dialog';
 import type { ExportSettings, NewBackground, SheetSlice } from './ui/dialogs';
 import { spriteSheetDialog } from './ui/dialogs';
 
@@ -70,6 +71,12 @@ export class ProjectFiles {
     window.addEventListener('pagehide', () => {
       if (e.modified) void this.autosave(true);
     });
+    // Only warn when something really is not stored yet (autosave usually got there first).
+    window.addEventListener('beforeunload', (ev) => {
+      if (!e.modified) return;
+      void this.autosave(true);
+      ev.preventDefault();
+    });
   }
 
   private get editor() {
@@ -85,8 +92,11 @@ export class ProjectFiles {
 
   private schedule(): void {
     clearTimeout(this.timer);
-    if (!this.editor.modified) return;
-    this.timer = window.setTimeout(() => void this.autosave(false), 1500);
+    const e = this.editor;
+    if (!e.modified) return;
+    // Save quickly for typical sprite sizes; wait longer for big images (encoding costs more).
+    const pixels = e.doc.width * e.doc.height * e.doc.layers.length * e.doc.frames.length;
+    this.timer = window.setTimeout(() => void this.autosave(false), pixels > 2_000_000 ? 2500 : 800);
   }
 
   private async autosave(urgent: boolean): Promise<void> {
@@ -171,12 +181,22 @@ export class ProjectFiles {
     }
   }
 
-  /** Makes sure the current document is stored before switching away from it. */
-  async flushCurrent(): Promise<void> {
+  /**
+   * Makes sure the current document is stored before switching away from it.
+   * Returns false if it could not be saved and the user chose to keep it.
+   */
+  async flushCurrent(): Promise<boolean> {
     const e = this.editor;
     e.commitFloating();
     clearTimeout(this.timer);
-    if (e.modified) await this.saveToLibrary(false);
+    if (!e.modified) return true;
+    if (await this.saveToLibrary(false)) return true;
+    return confirmDialog(
+      'Discard unsaved changes?',
+      `“${e.doc.name}” could not be saved in this browser. Continue without it, or cancel and use “Save project as file” first.`,
+      'Discard changes',
+      true,
+    );
   }
 
   async restoreLastSession(): Promise<boolean> {
@@ -198,8 +218,8 @@ export class ProjectFiles {
       return false;
     }
     const { doc, extras } = await deserializeProject(row.data);
+    if (!(await this.load(doc, extras, { projectId: id }))) return false;
     this.created.set(id, row.meta.created);
-    await this.load(doc, extras, { projectId: id });
     setLastProjectId(id);
     return true;
   }
@@ -226,8 +246,11 @@ export class ProjectFiles {
 
   // ------------------------------------------------------------ Loading
 
-  private async load(doc: ArtDocument, extras: ProjectExtras | null, info: Partial<DocumentInfo>): Promise<void> {
-    await this.flushCurrent();
+  private async load(doc: ArtDocument, extras: ProjectExtras | null, info: Partial<DocumentInfo>): Promise<boolean> {
+    if (!(await this.flushCurrent())) {
+      doc.dispose();
+      return false;
+    }
     const e = this.editor;
     e.setDocument(doc, info);
     if (extras) {
@@ -235,6 +258,7 @@ export class ProjectFiles {
       e.updateSettings({ grid: extras.grid });
       if (doc.frames.length > 1 && !e.settings.showTimeline) this.app.toggleTimeline(true);
     }
+    return true;
   }
 
   async newDocument(width: number, height: number, background: NewBackground): Promise<void> {
@@ -247,7 +271,7 @@ export class ProjectFiles {
       this.app.toast(errorMessage(err), true);
       return;
     }
-    await this.load(doc, null, {});
+    if (!(await this.load(doc, null, {}))) return;
     setLastProjectId(null);
     this.app.lastNewSize = { w: width, h: height, bg: background };
   }
@@ -265,13 +289,12 @@ export class ProjectFiles {
       if (type === 'json' || file.name.toLowerCase().endsWith(`.${PROJECT_EXT}`)) {
         const { doc, extras } = await deserializeProject(await file.text());
         if (!doc.name || doc.name === 'Untitled') doc.name = baseName(file.name);
-        await this.load(doc, extras, { projectHandle: handle && file.name.toLowerCase().endsWith(`.${PROJECT_EXT}`) ? handle : null });
-        this.app.toast(`Opened ${file.name}`);
+        if (await this.load(doc, extras, { projectHandle: handle && file.name.toLowerCase().endsWith(`.${PROJECT_EXT}`) ? handle : null })) this.app.toast(`Opened ${file.name}`);
         return;
       }
       const img = await decodeImage(file);
       const doc = ArtDocument.fromLayers(img.width, img.height, [new Layer('Layer 1', [new Surface(img.width, img.height, img.data)])], [{ duration: 100 }], baseName(file.name));
-      await this.load(doc, null, { imageHandle: handle });
+      if (!(await this.load(doc, null, { imageHandle: handle }))) return;
       setLastProjectId(null);
       const fmt: ExportFormat | null = type === 'png' ? 'png' : type === 'jpeg' ? 'jpeg' : type === 'webp' ? 'webp' : null;
       this.lastExport = handle && fmt ? { handle, name: file.name, settings: { ...this.app.exportSettings, format: fmt, scale: 1, content: 'image' } } : null;
@@ -328,7 +351,7 @@ export class ProjectFiles {
       return;
     }
     const doc = ArtDocument.fromLayers(s.frameW, s.frameH, [new Layer('Layer 1', cels)], cels.map(() => ({ duration: 100 })), name);
-    await this.load(doc, null, {});
+    if (!(await this.load(doc, null, {}))) return;
     setLastProjectId(null);
     this.app.toggleTimeline(true);
     this.app.toast(`Imported ${cels.length} frame${cels.length === 1 ? '' : 's'}`);
