@@ -374,7 +374,8 @@ export class App {
   }
 
   private showZoomHud(): void {
-    if (this.input.busy || this.layout === 'mobile') this.flashHud(zoomLabel(this.editor.view.zoom));
+    // Only during gestures; the desktop status bar always shows the zoom.
+    if (this.input.busy) this.flashHud(zoomLabel(this.editor.view.zoom));
   }
 
   private flashHud(text: string): void {

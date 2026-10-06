@@ -37,7 +37,9 @@ export function optionControl(editor: Editor, key: string, spec: OptionSpec, lar
       'aria-label': `${spec.label} value`,
       inputmode: 'numeric',
     });
+    const valueEl = h('span', { class: 'opt-value' }, fmt(spec, value));
     const sync = (v: number) => {
+      valueEl.textContent = fmt(spec, v);
       range.value = String(toPos(spec, v));
       num.value = String(spec.percent ? Math.round(v * 100) : Math.round(v));
       num.title = fmt(spec, v);
@@ -46,6 +48,7 @@ export function optionControl(editor: Editor, key: string, spec: OptionSpec, lar
       const v = fromPos(spec, Number(range.value));
       editor.setOption(key, spec.key, v);
       num.value = String(spec.percent ? Math.round(v * 100) : Math.round(v));
+      valueEl.textContent = fmt(spec, v);
     });
     num.addEventListener('change', () => {
       let v = Number(num.value);
@@ -55,7 +58,7 @@ export function optionControl(editor: Editor, key: string, spec: OptionSpec, lar
       editor.setOption(key, spec.key, v);
       sync(v);
     });
-    return h('label', { class: `opt opt-slider ${large ? 'large' : ''}`.trim(), title: spec.label }, h('span', { class: 'opt-label' }, spec.label), range, num, spec.percent ? h('span', { class: 'opt-unit' }, '%') : null);
+    return h('label', { class: `opt opt-slider ${large ? 'large' : ''}`.trim(), title: spec.label }, h('span', { class: 'opt-label' }, spec.label, valueEl), range, num, spec.percent ? h('span', { class: 'opt-unit' }, '%') : null);
   }
   if (spec.type === 'toggle') {
     const on = Boolean(group[spec.key]);

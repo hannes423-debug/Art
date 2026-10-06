@@ -452,6 +452,27 @@ button:disabled {
   color: var(--text-dim);
 }
 
+.opt-value {
+  display: none;
+  margin-left: 5px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.app[data-layout='mobile'] .optionsbar .opt-value {
+  display: inline;
+}
+
+.app[data-layout='mobile'] .optionsbar .opt-num,
+.app[data-layout='mobile'] .optionsbar .opt-unit {
+  display: none;
+}
+
+.app[data-layout='mobile'] .optionsbar .opt-label {
+  min-width: 76px;
+}
+
 .opt-num {
   width: 50px;
   height: 24px;
@@ -1703,6 +1724,10 @@ dialog.dialog {
 
 dialog.dialog.wide {
   width: min(760px, calc(100vw - 24px));
+}
+
+dialog.dialog:focus {
+  outline: none;
 }
 
 dialog.dialog::backdrop {

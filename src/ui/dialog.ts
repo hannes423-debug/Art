@@ -32,7 +32,7 @@ export function openDialog(opts: { title: string; content: Node | Node[]; button
   const titleId = `dlg-${Math.random().toString(36).slice(2, 8)}`;
   const dlg = h(
     'dialog',
-    { class: `dialog ${opts.className ?? ''} ${opts.wide ? 'wide' : ''}`.trim(), 'aria-labelledby': titleId },
+    { class: `dialog ${opts.className ?? ''} ${opts.wide ? 'wide' : ''}`.trim(), 'aria-labelledby': titleId, tabindex: '-1' },
     h('form', { method: 'dialog', class: 'dialog-form' }, h('header', { class: 'dialog-header' }, h('h2', { id: titleId }, opts.title), closeBtn), body, footer),
   );
   let resolveClosed!: () => void;
@@ -87,7 +87,8 @@ export function openDialog(opts: { title: string; content: Node | Node[]; button
   openCount++;
   dlg.showModal();
   // Focus the first field on desktop; avoid popping the keyboard on phones.
-  if (!matchMedia('(pointer: coarse)').matches) {
+  if (matchMedia('(pointer: coarse)').matches) dlg.focus();
+  else {
     const first = body.querySelector<HTMLElement>('input:not([type=checkbox]):not([type=radio]), select, textarea');
     first?.focus();
     if (first instanceof HTMLInputElement) first.select();

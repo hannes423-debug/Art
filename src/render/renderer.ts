@@ -29,6 +29,13 @@ const WORKSPACE_BG = '#1b1d21';
 const CHECKER_A = '#3a3d42';
 const CHECKER_B = '#2c2f33';
 const PIXEL_GRID_MIN_ZOOM = 8;
+/** Pixels per check in the pattern canvas (the pattern is scaled into document space). */
+const CHECKER_TILE = 8;
+
+/** Check size in document pixels: the smallest power of two at least ~12 screen pixels wide. */
+export function checkerCell(zoom: number): number {
+  return Math.max(1, 2 ** Math.ceil(Math.log2(12 / zoom)));
+}
 
 /**
  * Draws the document into the on-screen canvas.
@@ -139,7 +146,6 @@ export class Renderer {
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
       this.canvas.height = h;
-      this.checker = null;
     }
     this.requestRender();
   }
@@ -177,20 +183,17 @@ export class Renderer {
     }
     const docTransform = () => ctx.setTransform(m.a * dpr, m.b * dpr, m.c * dpr, m.d * dpr, e, f);
 
-    // Transparency checkerboard, clipped to the document.
+    // Transparency checkerboard in document space. Each check covers a
+    // power-of-two number of pixels, so it always lines up with pixel edges.
     docTransform();
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, doc.width, doc.height);
-    ctx.clip();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const pattern = this.checkerPattern(dpr);
+    const cell = checkerCell(this.view.zoom);
+    const pattern = this.checkerPattern();
+    ctx.imageSmoothingEnabled = false;
     if (pattern) {
-      pattern.setTransform(new DOMMatrix([1, 0, 0, 1, e, f]));
+      pattern.setTransform(new DOMMatrix([cell / CHECKER_TILE, 0, 0, cell / CHECKER_TILE, 0, 0]));
       ctx.fillStyle = pattern;
     } else ctx.fillStyle = CHECKER_A;
-    ctx.fillRect(0, 0, W, H);
-    ctx.restore();
+    ctx.fillRect(0, 0, doc.width, doc.height);
 
     docTransform();
     ctx.imageSmoothingEnabled = this.settings.smooth;
@@ -294,9 +297,9 @@ export class Renderer {
     return canvas;
   }
 
-  private checkerPattern(dpr: number): CanvasPattern | null {
+  private checkerPattern(): CanvasPattern | null {
     if (this.checker) return this.checker;
-    const s = Math.max(4, Math.round(8 * dpr));
+    const s = CHECKER_TILE;
     const t = document.createElement('canvas');
     t.width = s * 2;
     t.height = s * 2;
