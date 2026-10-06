@@ -245,6 +245,14 @@ export class PaintSession {
             continue;
           }
           if (alphaLock) {
+            if (oa8 === 0) {
+              // Locked alpha: fully transparent pixels stay exactly as they are.
+              data[o] = or;
+              data[o + 1] = og;
+              data[o + 2] = ob;
+              data[o + 3] = 0;
+              continue;
+            }
             data[o] = or + (cr - or) * sa;
             data[o + 1] = og + (cg - og) * sa;
             data[o + 2] = ob + (cb - ob) * sa;
