@@ -114,7 +114,10 @@ test('two-finger tap undoes and three-finger tap redoes', async ({ page }) => {
 
 test('canvas-only mode: full-screen canvas, drawing works, easy to exit', async ({ page }) => {
   await newImage(page, 32, 32);
-  await page.locator('.topbar').getByRole('button', { name: /Canvas only/ }).click();
+  await page
+    .locator('.topbar')
+    .getByRole('button', { name: /Canvas only/ })
+    .click();
   await expect(page.locator('.topbar')).toBeHidden();
   await expect(page.locator('.bottombar')).toBeHidden();
   const stage = await page.locator('.stage').boundingBox();
@@ -137,7 +140,10 @@ test('canvas-only mode: full-screen canvas, drawing works, easy to exit', async 
 
 test('the back gesture leaves canvas-only mode', async ({ page }) => {
   await newImage(page, 16, 16);
-  await page.locator('.topbar').getByRole('button', { name: /Canvas only/ }).click();
+  await page
+    .locator('.topbar')
+    .getByRole('button', { name: /Canvas only/ })
+    .click();
   await expect(page.locator('.topbar')).toBeHidden();
   await page.goBack();
   await expect(page.locator('.topbar')).toBeVisible();

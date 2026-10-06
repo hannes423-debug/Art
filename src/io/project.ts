@@ -139,7 +139,8 @@ export async function deserializeProject(input: string | ProjectData<unknown>): 
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > MAX_DIMENSION || height > MAX_DIMENSION) {
     throw new ProjectFormatError('Invalid canvas size in project.');
   }
-  const frames: Frame[] = Array.isArray(data.frames) && data.frames.length ? data.frames.map((f) => ({ duration: Math.max(10, Number(f?.duration) || 100) })) : [{ duration: 100 }];
+  const frames: Frame[] =
+    Array.isArray(data.frames) && data.frames.length ? data.frames.map((f) => ({ duration: Math.max(10, Number(f?.duration) || 100) })) : [{ duration: 100 }];
   if (!Array.isArray(data.layers) || !data.layers.length) throw new ProjectFormatError('Project has no layers.');
   const layers: Layer[] = [];
   for (const [i, pl] of data.layers.entries()) {

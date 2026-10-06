@@ -224,8 +224,7 @@ describe('compositing', () => {
 describe('image ops', () => {
   const img = new Uint8ClampedArray([
     // 3x2
-    1, 0, 0, 255, 2, 0, 0, 255, 3, 0, 0, 255,
-    4, 0, 0, 255, 5, 0, 0, 255, 6, 0, 0, 255,
+    1, 0, 0, 255, 2, 0, 0, 255, 3, 0, 0, 255, 4, 0, 0, 255, 5, 0, 0, 255, 6, 0, 0, 255,
   ]);
   const reds = (d: Uint8ClampedArray) => Array.from(d).filter((_, i) => i % 4 === 0);
 

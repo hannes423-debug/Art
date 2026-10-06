@@ -18,7 +18,12 @@ export class LayersPanel {
   private opacity = h('input', { type: 'range', min: '0', max: '100', step: '1', 'aria-label': 'Layer opacity' });
   private opacityNum = h('span', { class: 'lp-opacity-num' });
   private blend = h('select', { class: 'input lp-blend', 'aria-label': 'Blend mode' }, ...BLEND_MODES.map((m) => h('option', { value: m.id }, m.label)));
-  private alphaLock = h('button', { type: 'button', class: 'opt-toggle lp-alpha', title: 'Lock alpha: paint only on existing pixels', 'aria-pressed': 'false' }, icon('lock', 14), ' Alpha');
+  private alphaLock = h(
+    'button',
+    { type: 'button', class: 'opt-toggle lp-alpha', title: 'Lock alpha: paint only on existing pixels', 'aria-pressed': 'false' },
+    icon('lock', 14),
+    ' Alpha',
+  );
   private unsub: (() => void)[] = [];
   private thumbTimer = 0;
   private dirtyThumbs = new Set<Layer>();
@@ -64,7 +69,9 @@ export class LayersPanel {
       this.opacityStart = null;
       if (v !== l.opacity) setLayerProps(editor.doc, editor.history, l, { opacity: v }, 'Layer opacity');
     });
-    this.blend.addEventListener('change', () => setLayerProps(editor.doc, editor.history, editor.doc.activeLayer, { blendMode: this.blend.value as BlendMode }, 'Blend mode'));
+    this.blend.addEventListener('change', () =>
+      setLayerProps(editor.doc, editor.history, editor.doc.activeLayer, { blendMode: this.blend.value as BlendMode }, 'Blend mode'),
+    );
     this.alphaLock.addEventListener('click', () => {
       const l = editor.doc.activeLayer;
       setLayerProps(editor.doc, editor.history, l, { alphaLocked: !l.alphaLocked }, l.alphaLocked ? 'Unlock alpha' : 'Lock alpha');
@@ -159,7 +166,12 @@ export class LayersPanel {
       this.drawThumb(thumb, layer);
       const eye = h(
         'button',
-        { type: 'button', class: `icon-btn lp-eye ${layer.visible ? '' : 'off'}`.trim(), title: layer.visible ? 'Hide layer' : 'Show layer', 'aria-label': layer.visible ? 'Hide layer' : 'Show layer' },
+        {
+          type: 'button',
+          class: `icon-btn lp-eye ${layer.visible ? '' : 'off'}`.trim(),
+          title: layer.visible ? 'Hide layer' : 'Show layer',
+          'aria-label': layer.visible ? 'Hide layer' : 'Show layer',
+        },
         icon(layer.visible ? 'eye' : 'eye-off', 16),
       );
       eye.addEventListener('click', (ev) => {

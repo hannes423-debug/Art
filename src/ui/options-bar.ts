@@ -58,11 +58,22 @@ export function optionControl(editor: Editor, key: string, spec: OptionSpec, lar
       editor.setOption(key, spec.key, v);
       sync(v);
     });
-    return h('label', { class: `opt opt-slider ${large ? 'large' : ''}`.trim(), title: spec.label }, h('span', { class: 'opt-label' }, spec.label, valueEl), range, num, spec.percent ? h('span', { class: 'opt-unit' }, '%') : null);
+    return h(
+      'label',
+      { class: `opt opt-slider ${large ? 'large' : ''}`.trim(), title: spec.label },
+      h('span', { class: 'opt-label' }, spec.label, valueEl),
+      range,
+      num,
+      spec.percent ? h('span', { class: 'opt-unit' }, '%') : null,
+    );
   }
   if (spec.type === 'toggle') {
     const on = Boolean(group[spec.key]);
-    const b = h('button', { type: 'button', class: `opt opt-toggle ${on ? 'on' : ''}`, 'aria-pressed': String(on), title: spec.title ?? spec.label }, spec.label);
+    const b = h(
+      'button',
+      { type: 'button', class: `opt opt-toggle ${on ? 'on' : ''}`, 'aria-pressed': String(on), title: spec.title ?? spec.label },
+      spec.label,
+    );
     b.addEventListener('click', () => {
       const v = !group[spec.key];
       editor.setOption(key, spec.key, v);
@@ -73,7 +84,17 @@ export function optionControl(editor: Editor, key: string, spec: OptionSpec, lar
   }
   const seg = h('div', { class: 'opt opt-choice', role: 'radiogroup', 'aria-label': spec.label });
   for (const c of spec.choices) {
-    const b = h('button', { type: 'button', class: `seg ${group[spec.key] === c.value ? 'on' : ''}`, role: 'radio', 'aria-checked': String(group[spec.key] === c.value), title: c.title ?? c.label }, c.label);
+    const b = h(
+      'button',
+      {
+        type: 'button',
+        class: `seg ${group[spec.key] === c.value ? 'on' : ''}`,
+        role: 'radio',
+        'aria-checked': String(group[spec.key] === c.value),
+        title: c.title ?? c.label,
+      },
+      c.label,
+    );
     b.addEventListener('click', () => {
       editor.setOption(key, spec.key, c.value);
       seg.querySelectorAll('.seg').forEach((s) => {

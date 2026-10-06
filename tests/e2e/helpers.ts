@@ -30,10 +30,13 @@ export async function newImage(page: Page, w: number, h: number, background = 't
   await dialog.getByLabel('Background').selectOption(background);
   await dialog.getByRole('button', { name: 'Create' }).click();
   await expect(dialog).toBeHidden();
-  await page.waitForFunction(([ww, hh]) => {
-    const d = (window as any).art.editor.doc;
-    return d.width === ww && d.height === hh;
-  }, [w, h]);
+  await page.waitForFunction(
+    ([ww, hh]) => {
+      const d = (window as any).art.editor.doc;
+      return d.width === ww && d.height === hh;
+    },
+    [w, h],
+  );
   // Let the stage settle and the view fit.
   await page.waitForTimeout(100);
 }
@@ -70,10 +73,13 @@ export async function layerPixel(page: Page, x: number, y: number): Promise<Px> 
 
 /** Pixel of a specific layer (bottom = 0). */
 export async function pixelOfLayer(page: Page, layer: number, x: number, y: number): Promise<Px> {
-  return page.evaluate(([l, px, py]) => {
-    const d = (window as any).art.editor.doc;
-    return d.layers[l].cels[d.activeFrame].getPixel(px, py);
-  }, [layer, x, y]);
+  return page.evaluate(
+    ([l, px, py]) => {
+      const d = (window as any).art.editor.doc;
+      return d.layers[l].cels[d.activeFrame].getPixel(px, py);
+    },
+    [layer, x, y],
+  );
 }
 
 export async function historyCount(page: Page): Promise<number> {

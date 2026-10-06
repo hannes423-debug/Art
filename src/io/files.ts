@@ -132,6 +132,10 @@ export async function shareFile(blob: Blob, name: string): Promise<boolean> {
 
 /** Safe file name from a document name. */
 export function fileNameFor(name: string, ext: string): string {
-  const base = name.replace(/\.[a-z0-9]{2,8}$/i, '').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'untitled';
+  const base =
+    name
+      .replace(/\.[a-z0-9]{2,8}$/i, '')
+      .replace(/[\\/:*?"<>|]+/g, '_')
+      .trim() || 'untitled';
   return `${base}.${ext}`;
 }

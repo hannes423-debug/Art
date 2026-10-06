@@ -38,7 +38,17 @@ test('imports a sprite sheet as frames, skipping empty cells', async ({ page }) 
     const d = (window as any).art.editor.doc;
     return { w: d.width, h: d.height, frames: d.frames.length, name: d.name, colors: d.layers[0].cels.map((c: any) => c.getPixel(0, 0)) };
   });
-  expect(doc).toEqual({ w: 8, h: 8, frames: 3, name: 'walk', colors: [[0, 255, 100, 255], [60, 195, 100, 255], [180, 75, 100, 255]] });
+  expect(doc).toEqual({
+    w: 8,
+    h: 8,
+    frames: 3,
+    name: 'walk',
+    colors: [
+      [0, 255, 100, 255],
+      [60, 195, 100, 255],
+      [180, 75, 100, 255],
+    ],
+  });
   await expect(page.locator('.timeline')).toBeVisible();
 });
 
@@ -138,7 +148,8 @@ test('line, rectangle outline and ellipse rasterize exact pixels', async ({ page
     [7, 6],
     [4, 2],
     [2, 4],
-  ]) expect((await layerPixel(page, x, y))[3]).toBe(255);
+  ])
+    expect((await layerPixel(page, x, y))[3]).toBe(255);
   expect((await layerPixel(page, 4, 4))[3]).toBe(0);
   await page.keyboard.press('Delete');
   await selectTool(page, 'o');

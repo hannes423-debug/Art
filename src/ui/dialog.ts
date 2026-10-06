@@ -25,7 +25,14 @@ export function dialogOpen(): boolean {
  * Opens a modal dialog (native <dialog>). On narrow screens CSS turns it
  * into a bottom sheet. Enter triggers the primary button.
  */
-export function openDialog(opts: { title: string; content: Node | Node[]; buttons?: DialogButton[]; className?: string; onClose?: () => void; wide?: boolean }): DialogHandle {
+export function openDialog(opts: {
+  title: string;
+  content: Node | Node[];
+  buttons?: DialogButton[];
+  className?: string;
+  onClose?: () => void;
+  wide?: boolean;
+}): DialogHandle {
   const body = h('div', { class: 'dialog-body' }, ...(Array.isArray(opts.content) ? opts.content : [opts.content]));
   const footer = h('div', { class: 'dialog-footer' });
   const closeBtn = h('button', { class: 'icon-btn dialog-close', type: 'button', title: 'Close', 'aria-label': 'Close' }, icon('close'));
@@ -33,7 +40,13 @@ export function openDialog(opts: { title: string; content: Node | Node[]; button
   const dlg = h(
     'dialog',
     { class: `dialog ${opts.className ?? ''} ${opts.wide ? 'wide' : ''}`.trim(), 'aria-labelledby': titleId, tabindex: '-1' },
-    h('form', { method: 'dialog', class: 'dialog-form' }, h('header', { class: 'dialog-header' }, h('h2', { id: titleId }, opts.title), closeBtn), body, footer),
+    h(
+      'form',
+      { method: 'dialog', class: 'dialog-form' },
+      h('header', { class: 'dialog-header' }, h('h2', { id: titleId }, opts.title), closeBtn),
+      body,
+      footer,
+    ),
   );
   let resolveClosed!: () => void;
   const closed = new Promise<void>((r) => (resolveClosed = r));

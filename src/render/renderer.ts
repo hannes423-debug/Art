@@ -354,7 +354,14 @@ export class Renderer {
     }
   }
 
-  private drawSelection(ctx: CanvasRenderingContext2D, doc: ArtDocument, m: { a: number; b: number; c: number; d: number }, dpr: number, e: number, f: number): void {
+  private drawSelection(
+    ctx: CanvasRenderingContext2D,
+    doc: ArtDocument,
+    m: { a: number; b: number; c: number; d: number },
+    dpr: number,
+    e: number,
+    f: number,
+  ): void {
     const sel = doc.selection;
     if (!sel.active) return;
     if (this.outlineVersion !== sel.version || !this.outline) {
@@ -389,7 +396,14 @@ export class Renderer {
     ctx.setLineDash([]);
   }
 
-  private drawBorder(ctx: CanvasRenderingContext2D, doc: ArtDocument, m: { a: number; b: number; c: number; d: number }, dpr: number, e: number, f: number): void {
+  private drawBorder(
+    ctx: CanvasRenderingContext2D,
+    doc: ArtDocument,
+    m: { a: number; b: number; c: number; d: number },
+    dpr: number,
+    e: number,
+    f: number,
+  ): void {
     const corners = [
       [0, 0],
       [doc.width, 0],

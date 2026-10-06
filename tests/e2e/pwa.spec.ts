@@ -23,10 +23,12 @@ test('works offline after the first visit', async ({ page, context }) => {
   });
   test.skip(!hasSW, 'Service worker only runs in the production build');
   // Wait until the worker controls the page.
-  await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 10_000 }).catch(async () => {
-    await page.reload();
-    await page.waitForFunction(() => !!navigator.serviceWorker.controller);
-  });
+  await page
+    .waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 10_000 })
+    .catch(async () => {
+      await page.reload();
+      await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+    });
   await context.setOffline(true);
   await page.reload();
   await page.waitForFunction(() => !!(window as any).art);

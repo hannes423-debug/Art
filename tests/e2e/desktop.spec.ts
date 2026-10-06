@@ -123,23 +123,28 @@ test('layers: add, paint, hide, reorder, merge', async ({ page }) => {
   await setFg(page, '#ff0000');
   await drawMouse(page, [[1, 1]]);
   // New layer via the panel button.
-  await page.locator('.layers-panel').getByRole('button', { name: /New layer/ }).click();
+  await page
+    .locator('.layers-panel')
+    .getByRole('button', { name: /New layer/ })
+    .click();
   await expect(page.locator('.layer-row')).toHaveCount(2);
   await setFg(page, '#0000ff');
   await drawMouse(page, [[1, 1]]);
   expect(await pixelOfLayer(page, 0, 1, 1)).toEqual([255, 0, 0, 255]);
   expect(await pixelOfLayer(page, 1, 1, 1)).toEqual([0, 0, 255, 255]);
-  const composite = () => page.evaluate(() => {
-    const e = (window as any).art.editor;
-    const d = e.doc;
-    // Exact composite of the top-left pixels.
-    let out = [0, 0, 0, 0];
-    for (const l of d.layers) if (l.visible) {
-      const p = l.cels[0].getPixel(1, 1);
-      if (p[3]) out = p;
-    }
-    return out;
-  });
+  const composite = () =>
+    page.evaluate(() => {
+      const e = (window as any).art.editor;
+      const d = e.doc;
+      // Exact composite of the top-left pixels.
+      let out = [0, 0, 0, 0];
+      for (const l of d.layers)
+        if (l.visible) {
+          const p = l.cels[0].getPixel(1, 1);
+          if (p[3]) out = p;
+        }
+      return out;
+    });
   expect(await composite()).toEqual([0, 0, 255, 255]);
   // Hide the top layer with its eye button.
   await page.locator('.layer-row').first().getByRole('button', { name: 'Hide layer' }).click();
@@ -214,7 +219,8 @@ test('exports scaled-up pixel art with nearest neighbour', async ({ page }) => {
   for (const [x, y] of [
     [4, 4],
     [7, 7],
-  ]) expect(at(x, y)).toEqual([255, 255, 255, 255]);
+  ])
+    expect(at(x, y)).toEqual([255, 255, 255, 255]);
   expect(at(8, 8)).toEqual([0, 0, 0, 0]);
   expect(at(3, 4)).toEqual([0, 0, 0, 0]);
 });
@@ -227,7 +233,10 @@ test('autosaves to the browser and restores the session after reload', async ({ 
     [5, 5],
     [9, 5],
   ]);
-  await page.locator('.layers-panel').getByRole('button', { name: /New layer/ }).click();
+  await page
+    .locator('.layers-panel')
+    .getByRole('button', { name: /New layer/ })
+    .click();
   await page.keyboard.press('Control+s');
   await expect(page.locator('.toast').last()).toContainText('Saved');
   await expect(page.locator('.doc-dirty')).not.toHaveClass(/on/);
@@ -372,11 +381,17 @@ test('sprite frames: add, duplicate, onion skin and sprite sheet export', async 
   await page.evaluate(() => (window as any).art.toggleTimeline(true));
   await expect(page.locator('.timeline')).toBeVisible();
   await page.locator('.timeline').getByRole('button', { name: 'Duplicate frame' }).click();
-  await page.locator('.timeline').getByRole('button', { name: /New empty frame/ }).click();
+  await page
+    .locator('.timeline')
+    .getByRole('button', { name: /New empty frame/ })
+    .click();
   await expect(page.locator('.tl-frame')).toHaveCount(3);
   expect(await page.evaluate(() => (window as any).art.editor.doc.activeFrame)).toBe(2);
   await drawMouse(page, [[6, 6]]);
-  await page.locator('.timeline').getByRole('button', { name: /Onion skin/ }).click();
+  await page
+    .locator('.timeline')
+    .getByRole('button', { name: /Onion skin/ })
+    .click();
   expect(await page.evaluate(() => (window as any).art.editor.settings.onionSkin)).toBe(true);
   await page.keyboard.press('Control+e');
   const dialog = page.locator('dialog.dialog');

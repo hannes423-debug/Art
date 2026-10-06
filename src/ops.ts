@@ -124,7 +124,13 @@ export function setLayerProps(doc: ArtDocument, history: History, layer: Layer, 
     Object.assign(layer, p);
     doc.notifyLayers();
   };
-  history.execute(new FnCommand(label, () => apply(after), () => apply(before)));
+  history.execute(
+    new FnCommand(
+      label,
+      () => apply(after),
+      () => apply(before),
+    ),
+  );
 }
 
 /** Merges the active layer into the layer below it (all frames). */
@@ -314,9 +320,17 @@ export function trimImage(doc: ArtDocument, history: History): boolean {
 export function flipImage(doc: ArtDocument, history: History, horizontal: boolean): void {
   const w = doc.width;
   const h = doc.height;
-  geometryChange(doc, history, horizontal ? 'Flip image horizontally' : 'Flip image vertically', w, h, (d) =>
-    horizontal ? flipHorizontal(d, w, h) : flipVertical(d, w, h),
-  0, 0, false);
+  geometryChange(
+    doc,
+    history,
+    horizontal ? 'Flip image horizontally' : 'Flip image vertically',
+    w,
+    h,
+    (d) => (horizontal ? flipHorizontal(d, w, h) : flipVertical(d, w, h)),
+    0,
+    0,
+    false,
+  );
 }
 
 export function rotateImage(doc: ArtDocument, history: History, turn: 'cw' | 'ccw' | '180'): void {
@@ -382,7 +396,13 @@ export function setAllFrameDurations(doc: ArtDocument, history: History, ms: num
     doc.frames.forEach((f, i) => (f.duration = d[i]));
     doc.emit('frames');
   };
-  history.execute(new FnCommand('Frame timing', () => apply(before.map(() => ms)), () => apply(before)));
+  history.execute(
+    new FnCommand(
+      'Frame timing',
+      () => apply(before.map(() => ms)),
+      () => apply(before),
+    ),
+  );
 }
 
 // ------------------------------------------------------------- Selection

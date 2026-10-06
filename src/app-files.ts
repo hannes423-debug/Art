@@ -155,7 +155,8 @@ export class ProjectFiles {
       return true;
     } catch (err) {
       console.error('Saving to the browser library failed', err);
-      if (explicit || !this.warned) this.app.toast(`Could not save in this browser (${errorMessage(err)}). Use “Save project as file” to keep your work.`, true);
+      if (explicit || !this.warned)
+        this.app.toast(`Could not save in this browser (${errorMessage(err)}). Use “Save project as file” to keep your work.`, true);
       this.warned = true;
       return false;
     }
@@ -231,7 +232,15 @@ export class ProjectFiles {
   async downloadLibraryProject(id: string): Promise<void> {
     const row = await loadProject(id);
     if (!row) return;
-    const data = { ...row.data, layers: await Promise.all(row.data.layers.map(async (l) => ({ ...l, cels: await Promise.all(l.cels.map(async (c) => (c ? 'data:image/png;base64,' + bytesToBase64(new Uint8Array(await c.arrayBuffer())) : null))) }))) };
+    const data = {
+      ...row.data,
+      layers: await Promise.all(
+        row.data.layers.map(async (l) => ({
+          ...l,
+          cels: await Promise.all(l.cels.map(async (c) => (c ? 'data:image/png;base64,' + bytesToBase64(new Uint8Array(await c.arrayBuffer())) : null))),
+        })),
+      ),
+    };
     downloadBlob(new Blob([JSON.stringify(data)], { type: 'application/json' }), fileNameFor(row.meta.name, PROJECT_EXT));
   }
 
@@ -263,7 +272,14 @@ export class ProjectFiles {
 
   async newDocument(width: number, height: number, background: NewBackground): Promise<void> {
     const e = this.editor;
-    const bg = background === 'transparent' ? null : background === 'white' ? { r: 255, g: 255, b: 255, a: 255 } : background === 'black' ? { r: 0, g: 0, b: 0, a: 255 } : e.bg;
+    const bg =
+      background === 'transparent'
+        ? null
+        : background === 'white'
+          ? { r: 255, g: 255, b: 255, a: 255 }
+          : background === 'black'
+            ? { r: 0, g: 0, b: 0, a: 255 }
+            : e.bg;
     let doc: ArtDocument;
     try {
       doc = ArtDocument.createBlank(width, height, 'Untitled', bg);
@@ -289,11 +305,18 @@ export class ProjectFiles {
       if (type === 'json' || file.name.toLowerCase().endsWith(`.${PROJECT_EXT}`)) {
         const { doc, extras } = await deserializeProject(await file.text());
         if (!doc.name || doc.name === 'Untitled') doc.name = baseName(file.name);
-        if (await this.load(doc, extras, { projectHandle: handle && file.name.toLowerCase().endsWith(`.${PROJECT_EXT}`) ? handle : null })) this.app.toast(`Opened ${file.name}`);
+        if (await this.load(doc, extras, { projectHandle: handle && file.name.toLowerCase().endsWith(`.${PROJECT_EXT}`) ? handle : null }))
+          this.app.toast(`Opened ${file.name}`);
         return;
       }
       const img = await decodeImage(file);
-      const doc = ArtDocument.fromLayers(img.width, img.height, [new Layer('Layer 1', [new Surface(img.width, img.height, img.data)])], [{ duration: 100 }], baseName(file.name));
+      const doc = ArtDocument.fromLayers(
+        img.width,
+        img.height,
+        [new Layer('Layer 1', [new Surface(img.width, img.height, img.data)])],
+        [{ duration: 100 }],
+        baseName(file.name),
+      );
       if (!(await this.load(doc, null, { imageHandle: handle }))) return;
       setLastProjectId(null);
       const fmt: ExportFormat | null = type === 'png' ? 'png' : type === 'jpeg' ? 'jpeg' : type === 'webp' ? 'webp' : null;
@@ -312,7 +335,8 @@ export class ProjectFiles {
     try {
       const img = await decodeImage(files[0].file);
       const doc = this.editor.doc;
-      if (img.width > doc.width || img.height > doc.height) this.app.toast('The image is larger than the canvas; parts outside will be cropped when applied (Image → Canvas size enlarges the canvas).');
+      if (img.width > doc.width || img.height > doc.height)
+        this.app.toast('The image is larger than the canvas; parts outside will be cropped when applied (Image → Canvas size enlarges the canvas).');
       this.editor.paste({ width: img.width, height: img.height, data: img.data, x: 0, y: 0 }, true, baseName(files[0].file.name));
     } catch (err) {
       this.app.toast(`Could not import: ${errorMessage(err)}`, true);
@@ -350,7 +374,13 @@ export class ProjectFiles {
       this.app.toast('Too many frames (maximum 1024)', true);
       return;
     }
-    const doc = ArtDocument.fromLayers(s.frameW, s.frameH, [new Layer('Layer 1', cels)], cels.map(() => ({ duration: 100 })), name);
+    const doc = ArtDocument.fromLayers(
+      s.frameW,
+      s.frameH,
+      [new Layer('Layer 1', cels)],
+      cels.map(() => ({ duration: 100 })),
+      name,
+    );
     if (!(await this.load(doc, null, {}))) return;
     setLastProjectId(null);
     this.app.toggleTimeline(true);
@@ -398,7 +428,12 @@ export class ProjectFiles {
   // ---------------------------------------------------------- Exporting
 
   /** Renders the pixels to export according to the settings. */
-  renderExport(s: ExportSettings): { width: number; height: number; data: Pixels; frames?: { x: number; y: number; w: number; h: number; duration: number }[] } {
+  renderExport(s: ExportSettings): {
+    width: number;
+    height: number;
+    data: Pixels;
+    frames?: { x: number; y: number; w: number; h: number; duration: number }[];
+  } {
     const doc = this.editor.doc;
     let width = doc.width;
     let height = doc.height;
@@ -429,7 +464,13 @@ export class ProjectFiles {
       const nw = Math.max(1, Math.round(width * s.scale));
       const nh = Math.max(1, Math.round(height * s.scale));
       data = resizePixels(data, width, height, nw, nh, s.scale > 1 ? 'nearest' : 'smooth');
-      frames = frames?.map((f) => ({ x: Math.round(f.x * s.scale), y: Math.round(f.y * s.scale), w: Math.round(f.w * s.scale), h: Math.round(f.h * s.scale), duration: f.duration }));
+      frames = frames?.map((f) => ({
+        x: Math.round(f.x * s.scale),
+        y: Math.round(f.y * s.scale),
+        w: Math.round(f.w * s.scale),
+        h: Math.round(f.h * s.scale),
+        duration: f.duration,
+      }));
       width = nw;
       height = nh;
     }
@@ -462,7 +503,9 @@ export class ProjectFiles {
         await shareFile(blob, fileName);
         return true;
       }
-      const res = await saveFileAs(blob, fileName, [{ description: `${s.format.toUpperCase()} image`, accept: { [FORMAT_MIME[s.format]]: [`.${FORMAT_EXT[s.format]}`] } }]);
+      const res = await saveFileAs(blob, fileName, [
+        { description: `${s.format.toUpperCase()} image`, accept: { [FORMAT_MIME[s.format]]: [`.${FORMAT_EXT[s.format]}`] } },
+      ]);
       if (res.status === 'cancelled') return false;
       if (res.status === 'saved') this.lastExport = { handle: res.handle, settings: { ...s }, name: res.handle.name };
       if (out.frames && s.json) {
@@ -479,7 +522,8 @@ export class ProjectFiles {
           meta: { app: 'Art', version: __APP_VERSION__, image: fileName, format: 'RGBA8888', size: { w: out.width, h: out.height }, scale: String(s.scale) },
         };
         const jsonBlob = new Blob([JSON.stringify(meta, null, 2)], { type: 'application/json' });
-        if (hasFileSystemAccess) await saveFileAs(jsonBlob, fileNameFor(fileName, 'json'), [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]);
+        if (hasFileSystemAccess)
+          await saveFileAs(jsonBlob, fileNameFor(fileName, 'json'), [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]);
         else downloadBlob(jsonBlob, fileNameFor(fileName, 'json'));
       }
       this.app.toast(res.status === 'saved' ? `Exported ${res.handle.name}` : `Downloaded ${fileName}`);
@@ -528,6 +572,8 @@ export class ProjectFiles {
   async exportPalette(format: 'gpl' | 'hex'): Promise<void> {
     const colors = this.editor.palette;
     const text = format === 'gpl' ? toGpl(colors, this.editor.doc.name) : toHexList(colors);
-    await saveFileAs(new Blob([text], { type: 'text/plain' }), fileNameFor(`${this.editor.doc.name} palette`, format), [{ description: 'Palette', accept: { 'text/plain': [`.${format}`] } }]);
+    await saveFileAs(new Blob([text], { type: 'text/plain' }), fileNameFor(`${this.editor.doc.name} palette`, format), [
+      { description: 'Palette', accept: { 'text/plain': [`.${format}`] } },
+    ]);
   }
 }

@@ -77,7 +77,9 @@ export function isTyping(target: EventTarget | null): boolean {
 }
 
 /** Formats a shortcut for the current platform (mod → ⌘ on Apple, Ctrl elsewhere). */
-export const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform) || (navigator.userAgent.includes('Mac') && 'ontouchend' in document);
+export const isApple =
+  typeof navigator !== 'undefined' &&
+  (/Mac|iPhone|iPad|iPod/.test(navigator.platform) || (navigator.userAgent.includes('Mac') && typeof document !== 'undefined' && 'ontouchend' in document));
 
 export function formatShortcut(s: string): string {
   if (!s) return '';

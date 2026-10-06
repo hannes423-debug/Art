@@ -10,16 +10,7 @@ import { Renderer } from './render/renderer';
 import { Viewport } from './render/viewport';
 import { type Settings, loadState, saveState } from './settings';
 import { MoveSession } from './tools/move-session';
-import {
-  EllipseSelectTool,
-  FillTool,
-  HandTool,
-  LassoTool,
-  MoveTool,
-  PickerTool,
-  RectSelectTool,
-  WandTool,
-} from './tools/other-tools';
+import { EllipseSelectTool, FillTool, HandTool, LassoTool, MoveTool, PickerTool, RectSelectTool, WandTool } from './tools/other-tools';
 import { BrushTool, EraserTool, PencilTool } from './tools/paint-tools';
 import { EllipseTool, LineTool, RectTool } from './tools/shape-tools';
 import type { Tool, ToolId, ToolOptions } from './tools/tool';

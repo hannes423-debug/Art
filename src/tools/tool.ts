@@ -3,20 +3,7 @@ import type { Overlay } from '../render/renderer';
 import type { Viewport } from '../render/viewport';
 
 export type ToolId =
-  | 'brush'
-  | 'pencil'
-  | 'eraser'
-  | 'line'
-  | 'rect'
-  | 'ellipse'
-  | 'fill'
-  | 'picker'
-  | 'select-rect'
-  | 'select-ellipse'
-  | 'lasso'
-  | 'wand'
-  | 'move'
-  | 'hand';
+  'brush' | 'pencil' | 'eraser' | 'line' | 'rect' | 'ellipse' | 'fill' | 'picker' | 'select-rect' | 'select-ellipse' | 'lasso' | 'wand' | 'move' | 'hand';
 
 /** A pointer sample in both document and screen space. */
 export interface ToolPointer {

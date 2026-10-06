@@ -159,7 +159,13 @@ export class App {
 
     // --- drawers (mobile)
     this.mobileMenuEl = mobileMenu(this.actions, MENUS, () => this.closeDrawer());
-    const drawerHeader = (label: string) => h('div', { class: 'drawer-header' }, h('h2', null, label), iconButton('close', 'Close', () => this.closeDrawer()));
+    const drawerHeader = (label: string) =>
+      h(
+        'div',
+        { class: 'drawer-header' },
+        h('h2', null, label),
+        iconButton('close', 'Close', () => this.closeDrawer()),
+      );
     this.drawers = {
       menu: h('div', { class: 'drawer left', role: 'dialog', 'aria-label': 'Menu' }, drawerHeader('Art'), this.mobileMenuEl),
       layers: h('div', { class: 'drawer right', role: 'dialog', 'aria-label': 'Layers' }, drawerHeader('Layers')),
@@ -433,7 +439,10 @@ export class App {
       const a = document.activeElement;
       if (a && a !== document.body && a !== this.canvas) return;
     }
-    if (ev.repeat && !['view.zoomIn', 'view.zoomOut', 'edit.undo', 'edit.redo', 'tool.sizeUp', 'tool.sizeDown', 'frame.prev', 'frame.next'].includes(action.id)) {
+    if (
+      ev.repeat &&
+      !['view.zoomIn', 'view.zoomOut', 'edit.undo', 'edit.redo', 'tool.sizeUp', 'tool.sizeDown', 'frame.prev', 'frame.next'].includes(action.id)
+    ) {
       ev.preventDefault();
       return;
     }

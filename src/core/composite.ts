@@ -40,15 +40,7 @@ export function blendImage(
 }
 
 /** Blends one non-premultiplied source pixel (alpha `sa` in 0..1) into dst at byte offset `o`. */
-export function blendPixel(
-  dst: Uint8ClampedArray,
-  o: number,
-  sr: number,
-  sg: number,
-  sb: number,
-  sa: number,
-  mode: BlendMode,
-): void {
+export function blendPixel(dst: Uint8ClampedArray, o: number, sr: number, sg: number, sb: number, sa: number, mode: BlendMode): void {
   if (sa <= 0) return;
   const da = dst[o + 3] / 255;
   if (da === 0) {

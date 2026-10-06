@@ -45,7 +45,9 @@ export class PickerTool extends Tool {
   readonly label = 'Color picker';
   override readonly shortcut = 'I';
   override readonly optionsKey = 'picker';
-  override readonly optionSpecs: OptionSpec[] = [{ type: 'toggle', key: 'sampleMerged', label: 'All layers', title: 'Pick the visible color instead of the active layer' }];
+  override readonly optionSpecs: OptionSpec[] = [
+    { type: 'toggle', key: 'sampleMerged', label: 'All layers', title: 'Pick the visible color instead of the active layer' },
+  ];
   private dragging = false;
   private target: 'fg' | 'bg' = 'fg';
 

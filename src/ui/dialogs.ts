@@ -97,15 +97,14 @@ export function exportDialog(app: App, webp: boolean): void {
   const frames = doc.frames.length;
   const name = h('input', { type: 'text', class: 'input', value: app.exportBaseName(), 'aria-label': 'File name', spellcheck: 'false' });
   const format = selectInput(
-    [
-      { value: 'png', label: 'PNG (lossless)' },
-      { value: 'jpeg', label: 'JPEG (no alpha)' },
-      ...(webp ? [{ value: 'webp', label: 'WebP' }] : []),
-    ],
+    [{ value: 'png', label: 'PNG (lossless)' }, { value: 'jpeg', label: 'JPEG (no alpha)' }, ...(webp ? [{ value: 'webp', label: 'WebP' }] : [])],
     s.format === 'webp' && !webp ? 'png' : s.format,
   );
   const scale = selectInput(
-    [0.25, 0.5, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16].map((v) => ({ value: String(v), label: v < 1 ? `${v * 100}%` : `${v}× ${v === 1 ? '(original)' : ''}`.trim() })),
+    [0.25, 0.5, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16].map((v) => ({
+      value: String(v),
+      label: v < 1 ? `${v * 100}%` : `${v}× ${v === 1 ? '(original)' : ''}`.trim(),
+    })),
     String(s.scale),
   );
   const content = selectInput(
@@ -158,7 +157,14 @@ export function exportDialog(app: App, webp: boolean): void {
   ];
   openDialog({
     title: 'Export image',
-    content: [field('File name', name), field('Content', content), sheetBox, h('div', { class: 'row' }, field('Format', format), field('Scale', scale)), qualityField, info],
+    content: [
+      field('File name', name),
+      field('Content', content),
+      sheetBox,
+      h('div', { class: 'row' }, field('Format', format), field('Scale', scale)),
+      qualityField,
+      info,
+    ],
     buttons,
   });
 }
@@ -253,7 +259,13 @@ export function scaleImageDialog(app: App): void {
         primary: true,
         onClick: () => {
           e.commitFloating();
-          scaleImage(doc, e.history, readNumber(w, 1, MAX_DIMENSION, doc.width), readNumber(hh, 1, MAX_DIMENSION, doc.height), mode.value as 'nearest' | 'smooth');
+          scaleImage(
+            doc,
+            e.history,
+            readNumber(w, 1, MAX_DIMENSION, doc.width),
+            readNumber(hh, 1, MAX_DIMENSION, doc.height),
+            mode.value as 'nearest' | 'smooth',
+          );
           e.fitView();
         },
       },
@@ -272,14 +284,22 @@ export function gridDialog(app: App): void {
   const snap = checkbox('Snap selections, shapes and moves to the grid', e.settings.snapToGrid);
   openDialog({
     title: 'Grid',
-    content: [h('div', { class: 'row' }, field('Cell width', w), field('Cell height', hh)), show.el, snap.el, h('p', { class: 'field-hint' }, 'Tip: set the cell size to your tile or sprite size.')],
+    content: [
+      h('div', { class: 'row' }, field('Cell width', w), field('Cell height', hh)),
+      show.el,
+      snap.el,
+      h('p', { class: 'field-hint' }, 'Tip: set the cell size to your tile or sprite size.'),
+    ],
     buttons: [
       { label: 'Cancel' },
       {
         label: 'Apply',
         primary: true,
         onClick: () => {
-          e.updateSettings({ grid: { width: readNumber(w, 1, 4096, 16), height: readNumber(hh, 1, 4096, 16), enabled: show.input.checked }, snapToGrid: snap.input.checked });
+          e.updateSettings({
+            grid: { width: readNumber(w, 1, 4096, 16), height: readNumber(hh, 1, 4096, 16), enabled: show.input.checked },
+            snapToGrid: snap.input.checked,
+          });
           e.markChanged();
         },
       },
@@ -360,10 +380,37 @@ export function shortcutsDialog(app: App): void {
     ...Object.values(app.editor.tools).map((t) => h('tr', null, h('td', null, t.label), h('td', null, h('kbd', null, t.shortcut || '—')))),
   );
   for (const id of [
-    'edit.undo', 'edit.redo', 'file.save', 'file.saveAs', 'file.open', 'file.export', 'edit.copy', 'edit.cut', 'edit.clear', 'select.all', 'select.none',
-    'layer.new', 'layer.duplicate', 'view.zoomIn', 'view.zoomOut', 'view.fit', 'view.actual', 'view.rotateLeft', 'view.rotateRight', 'view.flip', 'view.grid',
-    'view.canvasOnly', 'view.fullscreen', 'frame.prev', 'frame.next', 'colors.swap', 'colors.reset', 'tool.sizeDown', 'tool.sizeUp',
-  ]) add(id);
+    'edit.undo',
+    'edit.redo',
+    'file.save',
+    'file.saveAs',
+    'file.open',
+    'file.export',
+    'edit.copy',
+    'edit.cut',
+    'edit.clear',
+    'select.all',
+    'select.none',
+    'layer.new',
+    'layer.duplicate',
+    'view.zoomIn',
+    'view.zoomOut',
+    'view.fit',
+    'view.actual',
+    'view.rotateLeft',
+    'view.rotateRight',
+    'view.flip',
+    'view.grid',
+    'view.canvasOnly',
+    'view.fullscreen',
+    'frame.prev',
+    'frame.next',
+    'colors.swap',
+    'colors.reset',
+    'tool.sizeDown',
+    'tool.sizeUp',
+  ])
+    add(id);
   rows.push(['Paste', formatShortcut('mod+v')], ['Opacity 10–100%', `${formatShortcut('alt+1')} … ${formatShortcut('alt+0')}`]);
   const general = h('table', { class: 'kbd-table' }, ...rows.map(([l, k]) => h('tr', null, h('td', null, l), h('td', null, h('kbd', null, k)))));
   const gestures = h(
@@ -384,7 +431,16 @@ export function shortcutsDialog(app: App): void {
   openDialog({
     title: 'Shortcuts & gestures',
     wide: true,
-    content: [h('div', { class: 'kbd-columns' }, h('div', null, h('h3', { class: 'dialog-section' }, 'Tools'), tools), h('div', null, h('h3', { class: 'dialog-section' }, 'Commands'), general)), h('h3', { class: 'dialog-section' }, 'Mouse, pen & touch'), gestures],
+    content: [
+      h(
+        'div',
+        { class: 'kbd-columns' },
+        h('div', null, h('h3', { class: 'dialog-section' }, 'Tools'), tools),
+        h('div', null, h('h3', { class: 'dialog-section' }, 'Commands'), general),
+      ),
+      h('h3', { class: 'dialog-section' }, 'Mouse, pen & touch'),
+      gestures,
+    ],
     buttons: [{ label: 'Close', primary: true }],
   });
 }
@@ -419,7 +475,11 @@ export function projectsDialog(app: App, projects: ProjectMeta[]): void {
     title: 'Recent projects',
     wide: true,
     content: [h('p', { class: 'field-hint' }, 'Projects are stored in this browser on this device. Download a project file to back it up or move it.'), list],
-    buttons: [{ label: 'New image…', onClick: () => app.showNewDialog() }, { label: 'Open file…', onClick: () => void app.open() }, { label: 'Close', primary: true }],
+    buttons: [
+      { label: 'New image…', onClick: () => app.showNewDialog() },
+      { label: 'Open file…', onClick: () => void app.open() },
+      { label: 'Close', primary: true },
+    ],
     onClose: () => urls.forEach((u) => URL.revokeObjectURL(u)),
   });
   const render = (items: ProjectMeta[]) => {
@@ -436,7 +496,17 @@ export function projectsDialog(app: App, projects: ProjectMeta[]): void {
         thumb.append(h('img', { src: url, alt: '', loading: 'lazy' }));
       }
       const isCurrent = app.editor.info.projectId === p.id;
-      const open = h('button', { type: 'button', class: 'project-open' }, thumb, h('span', { class: 'project-name' }, p.name), h('span', { class: 'project-meta' }, `${p.width}×${p.height} · ${p.layers} layer${p.layers === 1 ? '' : 's'}${p.frames > 1 ? ` · ${p.frames} frames` : ''} · ${new Date(p.modified).toLocaleString()}`));
+      const open = h(
+        'button',
+        { type: 'button', class: 'project-open' },
+        thumb,
+        h('span', { class: 'project-name' }, p.name),
+        h(
+          'span',
+          { class: 'project-meta' },
+          `${p.width}×${p.height} · ${p.layers} layer${p.layers === 1 ? '' : 's'}${p.frames > 1 ? ` · ${p.frames} frames` : ''} · ${new Date(p.modified).toLocaleString()}`,
+        ),
+      );
       open.addEventListener('click', () => {
         handle.close();
         void app.openFromLibrary(p.id);
@@ -468,7 +538,12 @@ export interface SheetSlice {
 }
 
 /** Lets the user describe how a sprite sheet is laid out, with a live grid preview. */
-export function spriteSheetDialog(_app: App, name: string, img: { width: number; height: number; data: Uint8ClampedArray }, onImport: (s: SheetSlice) => void): void {
+export function spriteSheetDialog(
+  _app: App,
+  name: string,
+  img: { width: number; height: number; data: Uint8ClampedArray },
+  onImport: (s: SheetSlice) => void,
+): void {
   const guess = guessCell(img.width, img.height);
   const fw = numberInput(guess, 1, img.width);
   const fh = numberInput(Math.min(guess, img.height), 1, img.height);

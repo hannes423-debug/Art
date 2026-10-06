@@ -233,7 +233,7 @@ function drawEllipseAA(s: PaintSession, x0: number, y0: number, x1: number, y1: 
     for (let x = x0 - 1; x <= x1 + 1; x++) {
       const px = x + 0.5 - cx;
       const f = (px * px) / (rx * rx) + (py * py) / (ry * ry) - 1;
-      const g = 2 * Math.sqrt((px * px) / (rx ** 4) + (py * py) / (ry ** 4));
+      const g = 2 * Math.sqrt((px * px) / rx ** 4 + (py * py) / ry ** 4);
       const d = f / Math.max(g, 1e-6); // signed distance, negative inside
       let c: number;
       if (width <= 0) c = 0.5 - d;

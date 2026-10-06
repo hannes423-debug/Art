@@ -31,12 +31,15 @@ test('pen pressure controls brush size', async ({ page }) => {
   await stroke(44, 1);
   /** Height of the painted band in column 30. */
   const thickness = (y0: number, y1: number) =>
-    page.evaluate(([a, b]) => {
-      const cel = (window as any).art.editor.doc.activeCel;
-      let n = 0;
-      for (let y = a; y < b; y++) if (cel.getPixel(30, y)[3] > 127) n++;
-      return n;
-    }, [y0, y1]);
+    page.evaluate(
+      ([a, b]) => {
+        const cel = (window as any).art.editor.doc.activeCel;
+        let n = 0;
+        for (let y = a; y < b; y++) if (cel.getPixel(30, y)[3] > 127) n++;
+        return n;
+      },
+      [y0, y1],
+    );
   const light = await thickness(0, 32);
   const firm = await thickness(32, 64);
   expect(light).toBeGreaterThanOrEqual(3);

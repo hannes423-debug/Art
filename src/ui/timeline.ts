@@ -40,7 +40,17 @@ export class Timeline {
     this.el.append(
       h('div', { class: 'tl-controls' }, prev, this.playBtn, next),
       this.frames,
-      h('div', { class: 'tl-controls' }, add, dup, left, right, del, this.onionBtn, h('label', { class: 'tl-fps-label', title: 'Playback speed' }, this.fps, 'fps')),
+      h(
+        'div',
+        { class: 'tl-controls' },
+        add,
+        dup,
+        left,
+        right,
+        del,
+        this.onionBtn,
+        h('label', { class: 'tl-fps-label', title: 'Playback speed' }, this.fps, 'fps'),
+      ),
     );
     editor.on('document', () => this.attach(editor.doc));
     editor.on('playback', () => this.updateButtons());
@@ -115,7 +125,14 @@ export class Timeline {
       this.drawThumb(c, i);
       const b = h(
         'button',
-        { type: 'button', class: `tl-frame ${i === doc.activeFrame ? 'active' : ''}`.trim(), role: 'option', 'aria-selected': String(i === doc.activeFrame), title: `Frame ${i + 1}`, dataset: { frame: String(i) } },
+        {
+          type: 'button',
+          class: `tl-frame ${i === doc.activeFrame ? 'active' : ''}`.trim(),
+          role: 'option',
+          'aria-selected': String(i === doc.activeFrame),
+          title: `Frame ${i + 1}`,
+          dataset: { frame: String(i) },
+        },
         c,
         h('span', { class: 'tl-num' }, String(i + 1)),
       );

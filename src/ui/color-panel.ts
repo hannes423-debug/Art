@@ -220,12 +220,16 @@ export class ColorPanel {
       clearTimer();
     });
     b.addEventListener('pointerleave', clearTimer);
-    b.addEventListener('click', (e) => {
-      if (timer === -1) {
-        e.stopImmediatePropagation();
-        timer = 0;
-      }
-    }, true);
+    b.addEventListener(
+      'click',
+      (e) => {
+        if (timer === -1) {
+          e.stopImmediatePropagation();
+          timer = 0;
+        }
+      },
+      true,
+    );
     return b;
   }
 
@@ -300,4 +304,3 @@ function rgbToHsvKeepHue(c: RGBA, prev: HSV): HSV {
   if (hsv.s === 0) return { h: prev.h, s: 0, v: hsv.v };
   return hsv;
 }
-

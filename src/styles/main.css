@@ -925,9 +925,7 @@ button:disabled {
   position: relative;
   flex: 1;
   border-radius: 5px;
-  background:
-    linear-gradient(to top, #000, transparent),
-    linear-gradient(to right, #fff, hsl(var(--hue, 0) 100% 50%));
+  background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(var(--hue, 0) 100% 50%));
   cursor: crosshair;
   touch-action: none;
 }

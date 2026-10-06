@@ -56,7 +56,8 @@ for (const [x, y] of [
   [9, 14],
   [10, 13],
   [11, 13],
-]) art[y][x] = x < 4 ? 'b' : 'B';
+])
+  art[y][x] = x < 4 ? 'b' : 'B';
 // Auto outline around the pencil (not the stroke).
 const isPencil = (x, y) => x >= 0 && y >= 0 && x < N && y < N && 'PpMmHYyWL'.includes(art[y][x]);
 const outline = [];
@@ -95,7 +96,12 @@ function png(w, h, rgba) {
   ihdr.writeUInt32BE(h, 4);
   ihdr[8] = 8;
   ihdr[9] = 6;
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw, { level: 9 })), chunk('IEND', Buffer.alloc(0))]);
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
 }
 
 /**
@@ -152,7 +158,8 @@ write('favicon-32.png', render(32, 2, 0.18));
 // SVG (favicon & "any size" icon): one rect per pixel.
 const hex = (c) => '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('');
 let rects = '';
-for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (art[y][x] !== '.') rects += `<rect x="${x + 2}" y="${y + 2}" width="1" height="1" fill="${hex(COLORS[art[y][x]])}"/>`;
+for (let y = 0; y < N; y++)
+  for (let x = 0; x < N; x++) if (art[y][x] !== '.') rects += `<rect x="${x + 2}" y="${y + 2}" width="1" height="1" fill="${hex(COLORS[art[y][x]])}"/>`;
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" shape-rendering="crispEdges"><rect width="20" height="20" rx="4.4" fill="${hex(BG)}" shape-rendering="geometricPrecision"/>${rects}</svg>\n`;
 write('icon.svg', svg);
 console.log('Icons written to public/icons/');
