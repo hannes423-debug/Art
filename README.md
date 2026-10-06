@@ -53,7 +53,7 @@ fast and canvas-first.
 - Frames with onion skin and animation playback (FPS)
 - Sprite sheet import (slice by cell size, offset and gap) and export (strip or grid, with padding and frame-data JSON)
 - Export scaled up 2×–16× without blurring
-- Palettes: DawnBringer 32, PICO-8, Game Boy, grayscale; import/export GIMP `.gpl`, `.hex`, `.pal`; extract colors from a layer
+- Palettes: DawnBringer 32, PICO-8, Game Boy, grayscale; import GIMP `.gpl`, `.hex` and JASC `.pal`; export `.gpl` and `.hex`; extract colors from a layer
 
 **Color**
 - Foreground/background colors, HSV picker, hex and RGBA input, alpha, recent colors, palette swatches
