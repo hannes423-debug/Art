@@ -269,7 +269,7 @@ export class App {
     closePopup();
     if (on) {
       this.pushBack(() => this.toggleCanvasOnly(false));
-      this.flashHud('Canvas only — tap ✕ or press Tab to exit');
+      this.flashHud(this.layout === 'mobile' ? 'Canvas only — tap ✕ or go back to exit' : 'Canvas only — press Tab or click ✕ to exit');
     } else this.dropBack();
     this.mobileMenuEl.refresh?.();
   }

@@ -13,7 +13,7 @@
   --accent-soft: rgba(90, 169, 255, 0.18);
   --danger: #ff6b6b;
   --bar-h: 38px;
-  --tool: 34px;
+  --tool: 32px;
   --btn: 32px;
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, sans-serif;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
@@ -88,15 +88,16 @@ button:disabled {
   position: fixed;
   inset: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .app[data-layout='desktop'] {
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   grid-template-areas: 'top' 'opts' 'main' 'timeline' 'status';
 }
 
 .app[data-layout='mobile'] {
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto auto auto;
   grid-template-areas: 'top' 'main' 'timeline' 'opts' 'bottom';
 }
@@ -325,6 +326,8 @@ button:disabled {
   align-items: baseline;
   gap: 6px;
   min-width: 0;
+  overflow: hidden;
+  flex-shrink: 1;
   max-width: 40vw;
   margin-left: 8px;
   padding: 4px 8px;
@@ -379,6 +382,20 @@ button:disabled {
 
 .topbar-spacer {
   flex: 1;
+}
+
+.menubar {
+  flex-shrink: 0;
+}
+
+@media (max-width: 1100px) {
+  .app[data-layout='desktop'] .brand,
+  .app[data-layout='desktop'] .doc-dims {
+    display: none;
+  }
+  .app[data-layout='desktop'] .menubar-btn {
+    padding: 0 6px;
+  }
 }
 
 .app[data-layout='mobile'] .topbar-spacer {
@@ -588,14 +605,26 @@ button:disabled {
 .toolbar {
   display: flex;
   flex-direction: column;
-  flex-wrap: wrap;
-  align-content: flex-start;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 2px;
   padding: 6px 4px;
   background: var(--panel);
   border-right: 1px solid var(--border);
   min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+.toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* The color panel already shows FG/BG; the toolbar swatch is for when it is hidden. */
+.app[data-layout='desktop']:not(.no-sidepanel) .toolbar .color-swatch-btn,
+.app[data-layout='desktop']:not(.no-sidepanel) .toolbar .tool-spacer {
+  display: none;
 }
 
 .tool-btn {
@@ -725,6 +754,38 @@ button:disabled {
   height: 28px;
 }
 
+@media (orientation: landscape) and (max-height: 519px) {
+  .app[data-layout='mobile'] {
+    grid-template-columns: min-content minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: 'top top' 'bottom main' 'bottom timeline' 'bottom opts';
+  }
+  .app[data-layout='mobile'] .topbar {
+    height: calc(44px + var(--safe-top));
+  }
+  .app[data-layout='mobile'] .bottombar {
+    border-top: 0;
+    border-right: 1px solid var(--border);
+    padding: 0 0 var(--safe-bottom) var(--safe-left);
+  }
+  .app[data-layout='mobile'] .toolbar.mobile {
+    flex: none;
+    flex-direction: column;
+    height: auto;
+    width: 56px;
+    padding: 4px 0 6px;
+  }
+  .app[data-layout='mobile'] .tool-strip {
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .app[data-layout='mobile'] .optionsbar {
+    height: 44px;
+  }
+}
+
 /* ------------------------------------------------------------- Side panel */
 
 .sidepanel {
@@ -742,10 +803,20 @@ button:disabled {
 }
 
 .sidepanel .color-panel {
-  flex: none;
+  flex: 0 1 auto;
+  min-height: 120px;
   border-bottom: 1px solid var(--border);
-  max-height: 58%;
   overflow-y: auto;
+}
+
+.sidepanel .layers-panel {
+  flex: 1 0 210px;
+}
+
+@media (max-height: 820px) {
+  .sidepanel .cp-picker {
+    height: 104px;
+  }
 }
 
 .layers-panel {
@@ -1276,6 +1347,15 @@ button:disabled {
   flex-basis: 100%;
 }
 
+.app[data-layout='mobile'] .tl-optional {
+  display: none;
+}
+
+.app[data-layout='mobile'] .timeline .icon-btn {
+  width: 40px;
+  height: 40px;
+}
+
 /* ------------------------------------------------------------- Status bar */
 
 .statusbar {
@@ -1573,6 +1653,14 @@ button:disabled {
 
 .drawer .layers-panel {
   padding-bottom: 16px;
+}
+
+.drawer .layers-panel .panel-header h3 {
+  display: none;
+}
+
+.drawer .layers-panel .panel-header {
+  justify-content: flex-end;
 }
 
 .drawer .layer-list {

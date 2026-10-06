@@ -98,9 +98,9 @@ export function exportDialog(app: App, webp: boolean): void {
   const name = h('input', { type: 'text', class: 'input', value: app.exportBaseName(), 'aria-label': 'File name', spellcheck: 'false' });
   const format = selectInput(
     [
-      { value: 'png', label: 'PNG — lossless, transparent' },
-      { value: 'jpeg', label: 'JPEG — photos, no transparency' },
-      ...(webp ? [{ value: 'webp', label: 'WebP — small, transparent' }] : []),
+      { value: 'png', label: 'PNG (lossless)' },
+      { value: 'jpeg', label: 'JPEG (no alpha)' },
+      ...(webp ? [{ value: 'webp', label: 'WebP' }] : []),
     ],
     s.format === 'webp' && !webp ? 'png' : s.format,
   );

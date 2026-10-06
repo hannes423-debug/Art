@@ -24,15 +24,15 @@ export class Timeline {
     this.editor = editor;
     this.playBtn = iconButton('play', 'Play / stop', () => (editor.playing ? editor.stop() : editor.play()));
     this.onionBtn = iconButton('onion', 'Onion skin (show neighbouring frames)', () => editor.updateSettings({ onionSkin: !editor.settings.onionSkin }));
-    const prev = iconButton('skip-back', 'Previous frame (,)', () => this.go(-1));
-    const next = iconButton('skip-forward', 'Next frame (.)', () => this.go(1));
+    const prev = iconButton('skip-back', 'Previous frame (,)', () => this.go(-1), 'tl-optional');
+    const next = iconButton('skip-forward', 'Next frame (.)', () => this.go(1), 'tl-optional');
     const add = iconButton('plus', 'New empty frame (Alt+N)', () => addFrame(editor.doc, editor.history, false));
     const dup = iconButton('duplicate', 'Duplicate frame', () => addFrame(editor.doc, editor.history, true));
     const del = iconButton('trash', 'Delete frame', () => {
       if (!deleteFrame(editor.doc, editor.history)) editor.toast('A document needs at least one frame');
     });
-    const left = iconButton('chevron-left', 'Move frame earlier', () => moveFrame(editor.doc, editor.history, -1));
-    const right = iconButton('chevron-right', 'Move frame later', () => moveFrame(editor.doc, editor.history, 1));
+    const left = iconButton('chevron-left', 'Move frame earlier', () => moveFrame(editor.doc, editor.history, -1), 'tl-optional');
+    const right = iconButton('chevron-right', 'Move frame later', () => moveFrame(editor.doc, editor.history, 1), 'tl-optional');
     this.fps.addEventListener('change', () => {
       const fps = Math.max(1, Math.min(60, Math.round(Number(this.fps.value) || 8)));
       setAllFrameDurations(editor.doc, editor.history, Math.round(1000 / fps));
