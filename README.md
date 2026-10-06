@@ -146,8 +146,9 @@ Icons are generated with `npm run icons` (`scripts/generate-icons.mjs`).
 `npm run build` produces a fully static site in `dist/` that can be hosted
 anywhere (GitHub Pages, Netlify, any web server, even a subfolder). The
 repository includes a GitHub Actions workflow (`.github/workflows/pages.yml`)
-that publishes to GitHub Pages on every push to `main` (or manually): enable it
-once under **Settings → Pages → Source: GitHub Actions**. Another workflow
+that builds the app and pushes it to the `gh-pages` branch on every push to
+`main` (or manually): enable it once under **Settings → Pages → Source: Deploy
+from a branch → `gh-pages` / (root)**. Another workflow
 (`ci.yml`) runs the type check, unit tests, build and end-to-end tests on every
 push and pull request.
 
