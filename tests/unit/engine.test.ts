@@ -183,6 +183,9 @@ describe('keyboard shortcuts', () => {
     // macOS Option+N types "˜"; the physical key is used instead.
     expect(eventCombo(ev('˜', { altKey: true }, 'KeyN'))).toBe('alt+n');
     expect(eventCombo(ev('Delete'))).toBe('delete');
+    // Option+= / Option+- type other characters on macOS.
+    expect(eventCombo(ev('≠', { metaKey: true, altKey: true }, 'Equal'))).toBe('mod+alt+=');
+    expect(eventCombo(ev('–', { ctrlKey: true, altKey: true }, 'Minus'))).toBe('mod+alt+-');
   });
 });
 
@@ -207,5 +210,113 @@ describe('layer operations', () => {
     expect(d.layers[1].cels[0].getPixel(0, 0)).toEqual([255, 0, 0, 255]);
     d.setActiveLayer(d.layers[0]);
     expect(mergeDown(d, h)).toMatch(/no layer below/);
+  });
+});
+
+describe('selection grow / shrink / border', () => {
+  /** Selects the rectangle (x, y, w, h) on a blank document. */
+  function rectSel(dw: number, dh: number, x: number, y: number, w: number, hh: number) {
+    const d = doc(dw, dh);
+    const mask = new Uint8Array(dw * dh);
+    for (let yy = y; yy < y + hh; yy++) mask.fill(255, yy * dw + x, yy * dw + x + w);
+    d.selection.combine(mask, { x, y, w, h: hh }, 'replace');
+    return d.selection;
+  }
+  const count = (s: { mask: Uint8Array | null }) => (s.mask ? s.mask.reduce((n, v) => n + (v ? 1 : 0), 0) : 0);
+
+  it('grows with square or round corners', () => {
+    const sq = rectSel(16, 16, 5, 5, 4, 4);
+    sq.modify({ kind: 'grow', radius: 2, shape: 'square' });
+    expect(sq.bounds).toEqual({ x: 3, y: 3, w: 8, h: 8 });
+    expect(count(sq)).toBe(64);
+    const round = rectSel(16, 16, 5, 5, 4, 4);
+    round.modify({ kind: 'grow', radius: 2, shape: 'round' });
+    expect(round.bounds).toEqual({ x: 3, y: 3, w: 8, h: 8 });
+    // The far corners are more than 2px away from the rectangle.
+    expect(round.valueAt(3, 3)).toBe(0);
+    expect(round.valueAt(4, 4)).toBe(255);
+    expect(round.valueAt(3, 6)).toBe(255);
+  });
+
+  it('grows a single pixel into a plus with radius 1', () => {
+    const s = rectSel(5, 5, 2, 2, 1, 1);
+    s.modify({ kind: 'grow', radius: 1, shape: 'round' });
+    expect(count(s)).toBe(5);
+    expect(s.valueAt(1, 1)).toBe(0);
+    expect(s.valueAt(2, 1)).toBe(255);
+  });
+
+  it('shrinks, optionally away from the canvas edge, and can empty the selection', () => {
+    const a = rectSel(8, 8, 0, 0, 8, 8);
+    a.modify({ kind: 'shrink', radius: 1, shape: 'square', fromCanvasEdge: true });
+    expect(a.bounds).toEqual({ x: 1, y: 1, w: 6, h: 6 });
+    const b = rectSel(8, 8, 0, 0, 8, 8);
+    b.modify({ kind: 'shrink', radius: 1, shape: 'square', fromCanvasEdge: false });
+    expect(b.bounds).toEqual({ x: 0, y: 0, w: 8, h: 8 });
+    const c = rectSel(8, 8, 2, 2, 3, 3);
+    c.modify({ kind: 'shrink', radius: 2, shape: 'round', fromCanvasEdge: true });
+    expect(c.active).toBe(false);
+  });
+
+  it('selects a 1px outline outside or inside', () => {
+    const out = rectSel(10, 10, 3, 3, 4, 4);
+    out.modify({ kind: 'border', radius: 1, shape: 'square', side: 'outside' });
+    expect(count(out)).toBe(36 - 16);
+    expect(out.valueAt(4, 4)).toBe(0);
+    expect(out.valueAt(2, 2)).toBe(255);
+    const inner = rectSel(10, 10, 3, 3, 4, 4);
+    inner.modify({ kind: 'border', radius: 1, shape: 'square', side: 'inside' });
+    expect(count(inner)).toBe(16 - 4);
+    expect(inner.valueAt(3, 3)).toBe(255);
+    expect(inner.valueAt(4, 4)).toBe(0);
+  });
+
+  it('is one undo step in the editor history', async () => {
+    const { changeSelection } = await import('../../src/ops');
+    const d = doc(8, 8);
+    const h = new History();
+    changeSelection(d, h, 'Select all', () => d.selection.selectAll());
+    changeSelection(d, h, 'Shrink selection', () => d.selection.modify({ kind: 'shrink', radius: 2, shape: 'square', fromCanvasEdge: true }));
+    expect(d.selection.bounds).toEqual({ x: 2, y: 2, w: 4, h: 4 });
+    h.undo();
+    expect(d.selection.bounds).toEqual({ x: 0, y: 0, w: 8, h: 8 });
+  });
+});
+
+describe('mask morphology matches the brute-force definition', () => {
+  it('for random masks, both shapes, grow and shrink', async () => {
+    const { growMask, shrinkMask } = await import('../../src/core/morphology');
+    const { computeMaskBounds } = await import('../../src/core/selection');
+    let seed = 7;
+    const rand = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    const W = 23;
+    const H = 17;
+    for (let trial = 0; trial < 30; trial++) {
+      const m = new Uint8Array(W * H);
+      for (let i = 0; i < m.length; i++) m[i] = rand() < 0.35 ? 255 : 0;
+      const b = computeMaskBounds(m, W, H, null);
+      if (!b) continue;
+      const r = 1 + (trial % 5);
+      for (const shape of ['round', 'square'] as const) {
+        const inside = (dx: number, dy: number) => (shape === 'square' ? Math.max(Math.abs(dx), Math.abs(dy)) <= r : dx * dx + dy * dy <= r * r);
+        const at = (x: number, y: number, outside: number) => (x < 0 || y < 0 || x >= W || y >= H ? outside : m[y * W + x]);
+        const grown = growMask(m, W, H, b, r, shape);
+        const edge = trial % 2 === 0;
+        const shrunk = shrinkMask(m, W, H, b, r, shape, edge);
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            let any = false;
+            let all = true;
+            for (let dy = -r; dy <= r; dy++)
+              for (let dx = -r; dx <= r; dx++) {
+                if (!inside(dx, dy)) continue;
+                if (at(x + dx, y + dy, 0)) any = true;
+                if (!at(x + dx, y + dy, edge ? 0 : 255)) all = false;
+              }
+            expect(grown[y * W + x], `grow ${shape} r=${r} at ${x},${y}`).toBe(any ? 255 : 0);
+            expect(shrunk[y * W + x], `shrink ${shape} r=${r} at ${x},${y}`).toBe(all ? 255 : 0);
+          }
+      }
+    }
   });
 });

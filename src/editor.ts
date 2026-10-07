@@ -4,7 +4,7 @@ import { Emitter } from './core/emitter';
 import { History } from './core/history';
 import { type PaintParams, PaintSession } from './core/paint';
 import { presetColors } from './core/palette';
-import type { SelectionMode } from './core/selection';
+import type { SelectionMode, SelectionModify } from './core/selection';
 import { type ClipImage, addLayer, changeSelection, clearPixels, copyPixels } from './ops';
 import { Renderer } from './render/renderer';
 import { Viewport } from './render/viewport';
@@ -264,6 +264,15 @@ export class Editor extends Emitter<EditorEvents> {
   invertSelection(): void {
     this.commitFloating();
     changeSelection(this.doc, this.history, 'Invert selection', () => this.doc.selection.invert());
+  }
+
+  /** Grows, shrinks or borders the selection as one undo step. */
+  modifySelection(m: SelectionModify): void {
+    this.commitFloating();
+    if (!this.doc.selection.active) return;
+    const labels = { grow: 'Grow selection', shrink: 'Shrink selection', border: 'Border selection' };
+    changeSelection(this.doc, this.history, labels[m.kind], () => this.doc.selection.modify(m));
+    if (!this.doc.selection.active) this.toast('The selection is now empty');
   }
 
   // ------------------------------------------------- Floating & clipboard

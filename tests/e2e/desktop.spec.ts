@@ -320,6 +320,56 @@ test('rectangle selection limits painting and can be cleared', async ({ page }) 
   expect(await layerPixel(page, 10, 10)).toEqual([255, 0, 0, 255]);
 });
 
+test('grow, shrink and border the selection from the Select menu', async ({ page }) => {
+  await newImage(page, 16, 16);
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    const m = new Uint8Array(256);
+    for (let y = 5; y < 9; y++) m.fill(255, y * 16 + 5, y * 16 + 9);
+    e.doc.selection.combine(m, { x: 5, y: 5, w: 4, h: 4 }, 'replace');
+    e.doc.notifySelection();
+  });
+  const bounds = () => page.evaluate(() => (window as any).art.editor.doc.selection.bounds);
+  const menu = async (item: string) => {
+    await page.locator('.menubar-btn', { hasText: 'Select' }).click();
+    await page.getByRole('menuitem', { name: item }).click();
+  };
+  const dialog = page.locator('dialog.dialog');
+
+  await menu('Grow selection…');
+  await dialog.getByLabel('By (px)').fill('2');
+  await dialog.getByLabel('Shape').selectOption('square');
+  await dialog.getByRole('button', { name: 'Grow' }).click();
+  expect(await bounds()).toEqual({ x: 3, y: 3, w: 8, h: 8 });
+
+  // The dialog remembers the last amount and shape.
+  await menu('Shrink selection…');
+  await expect(dialog.getByLabel('By (px)')).toHaveValue('2');
+  await dialog.getByRole('button', { name: 'Shrink' }).click();
+  expect(await bounds()).toEqual({ x: 5, y: 5, w: 4, h: 4 });
+
+  // Keyboard: grow / shrink by one pixel.
+  await page.keyboard.press('Control+Alt+Equal');
+  expect(await bounds()).toEqual({ x: 4, y: 4, w: 6, h: 6 });
+  await page.keyboard.press('Control+Alt+Minus');
+  expect(await bounds()).toEqual({ x: 5, y: 5, w: 4, h: 4 });
+
+  // A 1px outside border filled with the foreground color outlines the area.
+  await menu('Border selection…');
+  await dialog.getByLabel('Width (px)').fill('1');
+  await dialog.getByRole('button', { name: 'Select border' }).click();
+  await setFg(page, '#000000');
+  await page.keyboard.press('Alt+Backspace');
+  expect(await layerPixel(page, 4, 4)).toEqual([0, 0, 0, 255]);
+  expect(await layerPixel(page, 5, 5)).toEqual([0, 0, 0, 0]);
+  expect(await layerPixel(page, 3, 3)).toEqual([0, 0, 0, 0]);
+
+  // Each change is one undo step.
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  expect(await bounds()).toEqual({ x: 5, y: 5, w: 4, h: 4 });
+});
+
 test('move tool moves selected pixels as one undo step', async ({ page }) => {
   await newImage(page, 16, 16);
   await selectTool(page, 'p');

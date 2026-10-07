@@ -9,12 +9,14 @@ import { dialogOpen, promptDialog } from './ui/dialog';
 import {
   type ExportSettings,
   type NewBackground,
+  type SelectionModifyKind,
   aboutDialog,
   canvasSizeDialog,
   exportDialog,
   gridDialog,
   newImageDialog,
   projectsDialog,
+  modifySelectionDialog,
   scaleImageDialog,
   settingsDialog,
   shortcutsDialog,
@@ -642,6 +644,10 @@ export class App {
 
   showCanvasSize(): void {
     canvasSizeDialog(this);
+  }
+
+  showModifySelection(kind: SelectionModifyKind): void {
+    modifySelectionDialog(this, kind);
   }
 
   showScaleImage(): void {

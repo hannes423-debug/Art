@@ -1,6 +1,7 @@
 import type { App } from '../app';
 import { type RGBA, toCss } from '../core/color';
 import { MAX_DIMENSION } from '../core/document';
+import type { MorphShape } from '../core/morphology';
 import type { ExportFormat } from '../io/image';
 import { canShareFile } from '../io/files';
 import type { ProjectMeta } from '../io/storage';
@@ -267,6 +268,62 @@ export function scaleImageDialog(app: App): void {
             mode.value as 'nearest' | 'smooth',
           );
           e.fitView();
+        },
+      },
+    ],
+  });
+}
+
+// ----------------------------------------------------------- Grow / shrink
+
+export type SelectionModifyKind = 'grow' | 'shrink' | 'border';
+
+/** Last used values, so repeating an adjustment is one Enter away. */
+const modifyDefaults = { radius: 1, shape: 'round' as MorphShape, fromCanvasEdge: true, side: 'outside' as 'outside' | 'inside' };
+
+export function modifySelectionDialog(app: App, kind: SelectionModifyKind): void {
+  const e = app.editor;
+  const d = modifyDefaults;
+  const amount = numberInput(d.radius, 1, 256);
+  const shape = selectInput(
+    [
+      { value: 'round', label: 'Round' },
+      { value: 'square', label: 'Square (keeps corners sharp)' },
+    ],
+    d.shape,
+  );
+  const edge = checkbox('Shrink away from canvas edges', d.fromCanvasEdge);
+  const side = selectInput(
+    [
+      { value: 'outside', label: 'Outside the selection (outline)' },
+      { value: 'inside', label: 'Inside the selection' },
+    ],
+    d.side,
+  );
+  const titles = { grow: 'Grow selection', shrink: 'Shrink selection', border: 'Border selection' };
+  const verbs = { grow: 'Grow', shrink: 'Shrink', border: 'Select border' };
+  const content: Node[] = [h('div', { class: 'row' }, field(kind === 'border' ? 'Width (px)' : 'By (px)', amount), field('Shape', shape))];
+  if (kind === 'shrink') content.push(edge.el);
+  if (kind === 'border') {
+    content.push(field('Position', side));
+    content.push(h('p', { class: 'field-hint' }, 'Tip: Select layer content, then a 1px outside border, then fill it to outline a sprite.'));
+  }
+  openDialog({
+    title: titles[kind],
+    content,
+    buttons: [
+      { label: 'Cancel' },
+      {
+        label: verbs[kind],
+        primary: true,
+        onClick: () => {
+          d.radius = readNumber(amount, 1, 256, d.radius);
+          d.shape = shape.value as MorphShape;
+          d.fromCanvasEdge = edge.input.checked;
+          d.side = side.value as 'outside' | 'inside';
+          if (kind === 'grow') e.modifySelection({ kind, radius: d.radius, shape: d.shape });
+          else if (kind === 'shrink') e.modifySelection({ kind, radius: d.radius, shape: d.shape, fromCanvasEdge: d.fromCanvasEdge });
+          else e.modifySelection({ kind, radius: d.radius, shape: d.shape, side: d.side });
         },
       },
     ],

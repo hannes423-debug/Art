@@ -1,6 +1,14 @@
 import { type Rect, clipRect, unionRect } from './geometry';
+import { type MorphShape, growMask, shrinkMask, subtractMask } from './morphology';
 
 export type SelectionMode = 'replace' | 'add' | 'subtract' | 'intersect';
+
+/** Ways to change the shape of an existing selection. */
+export type SelectionModify =
+  | { kind: 'grow'; radius: number; shape: MorphShape }
+  | { kind: 'shrink'; radius: number; shape: MorphShape; fromCanvasEdge: boolean }
+  /** A ring of `radius` pixels just outside (or just inside) the selection edge. */
+  | { kind: 'border'; radius: number; shape: MorphShape; side: 'outside' | 'inside' };
 
 /** Serializable snapshot of a selection (mask cropped to its bounds). */
 export interface SelectionState {
@@ -56,6 +64,36 @@ export class Selection {
     this.bounds = computeMaskBounds(m, this.width, this.height, null);
     if (!this.bounds) this.mask = null;
     this.version++;
+  }
+
+  /** Grows, shrinks or borders the selection. Returns false when nothing is selected. */
+  modify(m: SelectionModify): boolean {
+    const mask = this.mask;
+    const b = this.bounds;
+    if (!mask || !b) return false;
+    const r = Math.max(0, Math.round(m.radius));
+    if (r === 0) return true;
+    const { width: w, height: h } = this;
+    let next: Uint8Array;
+    let hint: Rect;
+    if (m.kind === 'grow') {
+      next = growMask(mask, w, h, b, r, m.shape);
+      hint = { x: b.x - r, y: b.y - r, w: b.w + 2 * r, h: b.h + 2 * r };
+    } else if (m.kind === 'shrink') {
+      next = shrinkMask(mask, w, h, b, r, m.shape, m.fromCanvasEdge);
+      hint = b;
+    } else if (m.side === 'outside') {
+      next = subtractMask(growMask(mask, w, h, b, r, m.shape), mask);
+      hint = { x: b.x - r, y: b.y - r, w: b.w + 2 * r, h: b.h + 2 * r };
+    } else {
+      next = subtractMask(mask, shrinkMask(mask, w, h, b, r, m.shape, true));
+      hint = b;
+    }
+    this.mask = next;
+    this.bounds = computeMaskBounds(next, w, h, hint);
+    if (!this.bounds) this.mask = null;
+    this.version++;
+    return true;
   }
 
   /** Coverage 0..255 at a pixel; 255 everywhere when no selection is active. */

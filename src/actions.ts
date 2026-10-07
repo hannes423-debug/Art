@@ -48,6 +48,8 @@ export function eventCombo(e: KeyboardEvent): string {
   // With Alt (Option on macOS) e.key is a special character; use the physical key.
   if (e.altKey && /^Key[A-Z]$/.test(e.code)) key = e.code.slice(3).toLowerCase();
   if (e.altKey && /^Digit\d$/.test(e.code)) key = e.code.slice(5);
+  if (e.altKey && e.code === 'Equal') key = '=';
+  if (e.altKey && e.code === 'Minus') key = '-';
   const parts: string[] = [];
   if (e.ctrlKey || e.metaKey) parts.push('mod');
   if (e.altKey) parts.push('alt');
@@ -125,7 +127,24 @@ export const MENUS: MenuDef[] = [
       'app.settings',
     ],
   },
-  { id: 'select', label: 'Select', items: ['select.all', 'select.none', 'select.invert', 'select.alpha', '-', 'image.cropSel'] },
+  {
+    id: 'select',
+    label: 'Select',
+    items: [
+      'select.all',
+      'select.none',
+      'select.invert',
+      'select.alpha',
+      '-',
+      'select.grow',
+      'select.shrink',
+      'select.border',
+      'select.grow1',
+      'select.shrink1',
+      '-',
+      'image.cropSel',
+    ],
+  },
   {
     id: 'image',
     label: 'Image',
@@ -279,6 +298,23 @@ export function createActions(app: App): ActionRegistry {
     { id: 'select.none', label: 'Deselect', keys: ['mod+d', 'mod+shift+a'], run: () => e.deselect(), enabled: hasSel },
     { id: 'select.invert', label: 'Invert selection', keys: ['mod+shift+i'], run: () => e.invertSelection() },
     { id: 'select.alpha', label: 'Select layer content', run: () => selectionFromAlpha(doc(), hist()) },
+    { id: 'select.grow', label: 'Grow selection…', run: () => app.showModifySelection('grow'), enabled: hasSel },
+    { id: 'select.shrink', label: 'Shrink selection…', run: () => app.showModifySelection('shrink'), enabled: hasSel },
+    { id: 'select.border', label: 'Border selection…', run: () => app.showModifySelection('border'), enabled: hasSel },
+    {
+      id: 'select.grow1',
+      label: 'Grow by 1px',
+      keys: ['mod+alt+='],
+      run: () => e.modifySelection({ kind: 'grow', radius: 1, shape: 'square' }),
+      enabled: hasSel,
+    },
+    {
+      id: 'select.shrink1',
+      label: 'Shrink by 1px',
+      keys: ['mod+alt+-'],
+      run: () => e.modifySelection({ kind: 'shrink', radius: 1, shape: 'square', fromCanvasEdge: true }),
+      enabled: hasSel,
+    },
 
     // Image
     { id: 'image.canvasSize', label: 'Canvas size…', run: () => app.showCanvasSize() },
