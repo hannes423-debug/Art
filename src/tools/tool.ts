@@ -25,10 +25,14 @@ export interface ToolPointer {
 }
 
 /** Declarative description of a tool option; rendered by the options bar and the mobile sheet. */
-export type OptionSpec =
+export type OptionSpec = (
   | { type: 'slider'; key: string; label: string; min: number; max: number; step?: number; unit?: string; percent?: boolean; log?: boolean }
   | { type: 'toggle'; key: string; label: string; title?: string }
-  | { type: 'choice'; key: string; label: string; choices: { value: string; label: string; title?: string }[] };
+  | { type: 'choice'; key: string; label: string; choices: { value: string; label: string; title?: string }[] }
+) & {
+  /** Options group in editor.options when not the tool's own (shared settings such as symmetry). */
+  group?: string;
+};
 
 export abstract class Tool implements Overlay {
   abstract readonly id: ToolId;
@@ -94,6 +98,8 @@ export interface ToolOptions {
   picker: { sampleMerged: boolean };
   select: { mode: 'replace' | 'add' | 'subtract' | 'intersect' };
   wand: { tolerance: number; contiguous: boolean; sampleMerged: boolean };
+  /** Mirror painting for brush, pencil and eraser. Axis positions in pixels; -1 = canvas center. */
+  symmetry: { mode: 'off' | 'x' | 'y' | 'xy'; x: number; y: number };
 }
 
 export function defaultToolOptions(): ToolOptions {
@@ -106,6 +112,7 @@ export function defaultToolOptions(): ToolOptions {
     picker: { sampleMerged: true },
     select: { mode: 'replace' },
     wand: { tolerance: 0, contiguous: true, sampleMerged: false },
+    symmetry: { mode: 'off', x: -1, y: -1 },
   };
 }
 

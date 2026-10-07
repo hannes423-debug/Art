@@ -22,6 +22,8 @@ export interface Settings {
   showTimeline: boolean;
   /** Desktop side panel visible. */
   sidePanel: boolean;
+  /** Tile preview: repeat the image around itself; drawing wraps across edges. */
+  tileMode: 'off' | 'both' | 'x' | 'y';
 }
 
 export function defaultSettings(): Settings {
@@ -38,6 +40,7 @@ export function defaultSettings(): Settings {
     fps: 8,
     showTimeline: false,
     sidePanel: true,
+    tileMode: 'off',
   };
 }
 

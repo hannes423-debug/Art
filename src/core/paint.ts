@@ -78,8 +78,29 @@ export class PaintSession {
     this.touched = unionRect(this.touched, c);
   }
 
+  /**
+   * Tile mode: coverage written past one edge continues at the opposite edge,
+   * so drawings repeat seamlessly when the image is tiled.
+   */
+  wrapX = false;
+  wrapY = false;
+
+  /** Offsets (multiples of the canvas size) that bring the range [a, b] onto the canvas. */
+  private shifts(a: number, b: number, size: number, wrap: boolean): number[] {
+    if (!wrap) return [0];
+    const out: number[] = [];
+    for (let k = Math.ceil(-b / size); k * size + a < size; k++) out.push(k * size);
+    return out;
+  }
+
   /** Anti-aliased round dab. `hardness` 0..1, `alpha` 0..1. */
   dabSoft(cx: number, cy: number, radius: number, hardness: number, alpha: number): void {
+    const r = Math.max(0.5, radius) + 1;
+    for (const sy of this.shifts(cy - r, cy + r, this.height, this.wrapY))
+      for (const sx of this.shifts(cx - r, cx + r, this.width, this.wrapX)) this.rawDabSoft(cx + sx, cy + sy, radius, hardness, alpha);
+  }
+
+  private rawDabSoft(cx: number, cy: number, radius: number, hardness: number, alpha: number): void {
     const r = Math.max(0.5, radius);
     const x0 = Math.max(0, Math.floor(cx - r - 1));
     const y0 = Math.max(0, Math.floor(cy - r - 1));
@@ -125,6 +146,13 @@ export class PaintSession {
   dabPixel(px: number, py: number, size: number, round: boolean, alpha = 1): void {
     const n = Math.max(1, Math.round(size));
     const off = Math.floor((n - 1) / 2);
+    for (const sy of this.shifts(py - off, py - off + n - 1, this.height, this.wrapY))
+      for (const sx of this.shifts(px - off, px - off + n - 1, this.width, this.wrapX)) this.rawDabPixel(px + sx, py + sy, n, round, alpha);
+  }
+
+  private rawDabPixel(px: number, py: number, size: number, round: boolean, alpha: number): void {
+    const n = Math.max(1, Math.round(size));
+    const off = Math.floor((n - 1) / 2);
     const x0 = px - off;
     const y0 = py - off;
     const v = Math.round(Math.min(1, alpha) * 255);
@@ -148,6 +176,13 @@ export class PaintSession {
 
   /** Sets coverage for a horizontal run of pixels. */
   span(y: number, xa: number, xb: number, alpha = 1): void {
+    for (const sy of this.shifts(y, y, this.height, this.wrapY)) {
+      if (this.wrapX && xb - xa >= this.width - 1) this.rawSpan(y + sy, 0, this.width - 1, alpha);
+      else for (const sx of this.shifts(xa, xb, this.width, this.wrapX)) this.rawSpan(y + sy, xa + sx, xb + sx, alpha);
+    }
+  }
+
+  private rawSpan(y: number, xa: number, xb: number, alpha: number): void {
     if (y < 0 || y >= this.height) return;
     const a = Math.max(0, xa);
     const b = Math.min(this.width - 1, xb);
@@ -160,6 +195,8 @@ export class PaintSession {
 
   /** Sets one pixel's coverage directly (used e.g. to undo a pixel-perfect corner). */
   setCoverage(x: number, y: number, value: number): void {
+    if (this.wrapX) x = ((x % this.width) + this.width) % this.width;
+    if (this.wrapY) y = ((y % this.height) + this.height) % this.height;
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
     this.mask[y * this.width + x] = value;
     this.markDirty({ x, y, w: 1, h: 1 });
@@ -167,6 +204,12 @@ export class PaintSession {
 
   /** Max-combines a coverage array covering `rect` (rect.w × rect.h, 0..255). */
   addCoverage(cov: Uint8Array | Uint8ClampedArray, rect: Rect, stride = rect.w, alphaChannel = false): void {
+    for (const sy of this.shifts(rect.y, rect.y + rect.h - 1, this.height, this.wrapY))
+      for (const sx of this.shifts(rect.x, rect.x + rect.w - 1, this.width, this.wrapX))
+        this.rawAddCoverage(cov, { x: rect.x + sx, y: rect.y + sy, w: rect.w, h: rect.h }, stride, alphaChannel);
+  }
+
+  private rawAddCoverage(cov: Uint8Array | Uint8ClampedArray, rect: Rect, stride: number, alphaChannel: boolean): void {
     const clip = clipRect(rect, this.width, this.height);
     if (!clip) return;
     const step = alphaChannel ? 4 : 1;

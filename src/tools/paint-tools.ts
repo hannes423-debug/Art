@@ -9,6 +9,29 @@ interface StrokePoint {
   pressure: number;
 }
 
+/** Symmetry axes in document coordinates (null = no mirroring on that axis). */
+export interface SymmetryAxes {
+  /** Vertical axis: mirrors left ↔ right. */
+  x: number | null;
+  /** Horizontal axis: mirrors top ↔ bottom. */
+  y: number | null;
+}
+
+/** All mirror images of a point (the point itself first). */
+function mirrorPoints(x: number, y: number, axes: SymmetryAxes | null, flipX: (v: number) => number, flipY: (v: number) => number): [number, number][] {
+  const out: [number, number][] = [[x, y]];
+  if (!axes) return out;
+  if (axes.x !== null) out.push([flipX(x), y]);
+  if (axes.y !== null) out.push([x, flipY(y)]);
+  if (axes.x !== null && axes.y !== null) out.push([flipX(x), flipY(y)]);
+  return out;
+}
+
+/** Map key for a pixel position (works for coordinates off the canvas too). */
+function pixelKey(x: number, y: number): number {
+  return (y + 32768) * 65536 + (x + 32768);
+}
+
 /** Draws a two-tone outline so the cursor is visible on any background. */
 export function strokeTwoTone(ctx: CanvasRenderingContext2D): void {
   ctx.lineWidth = 3;
@@ -31,15 +54,31 @@ class PixelStroke {
   private readonly round: boolean;
   private readonly perfect: boolean;
   private readonly alpha: number;
+  private readonly axes: SymmetryAxes | null;
   private points: { x: number; y: number }[] = [];
   private counts = new Map<number, number>();
 
-  constructor(session: PaintSession, size: number, round: boolean, pixelPerfect: boolean, alpha: number) {
+  constructor(session: PaintSession, size: number, round: boolean, pixelPerfect: boolean, alpha: number, axes: SymmetryAxes | null = null) {
     this.session = session;
     this.size = Math.max(1, Math.round(size));
     this.round = round;
     this.perfect = pixelPerfect && this.size === 1;
     this.alpha = alpha;
+    this.axes = axes;
+  }
+
+  /** Mirror images of the dab at pixel (x, y); a dab of n pixels covers [x - off, x - off + n). */
+  private mirrored(x: number, y: number): [number, number][] {
+    const n = this.size;
+    const shift = 2 * Math.floor((n - 1) / 2) - n;
+    const a = this.axes;
+    return mirrorPoints(
+      x,
+      y,
+      a,
+      (v) => Math.round(2 * (a?.x ?? 0)) - v + shift,
+      (v) => Math.round(2 * (a?.y ?? 0)) - v + shift,
+    );
   }
 
   get last(): { x: number; y: number } | undefined {
@@ -89,18 +128,22 @@ class PixelStroke {
   }
 
   private stamp(x: number, y: number): void {
-    this.session.dabPixel(x, y, this.size, this.round, this.alpha);
-    if (this.perfect) {
-      const k = y * this.session.width + x;
-      this.counts.set(k, (this.counts.get(k) ?? 0) + 1);
+    for (const [mx, my] of this.mirrored(x, y)) {
+      this.session.dabPixel(mx, my, this.size, this.round, this.alpha);
+      if (this.perfect) {
+        const k = pixelKey(mx, my);
+        this.counts.set(k, (this.counts.get(k) ?? 0) + 1);
+      }
     }
   }
 
   private unstamp(x: number, y: number): void {
-    const k = y * this.session.width + x;
-    const c = (this.counts.get(k) ?? 1) - 1;
-    this.counts.set(k, c);
-    if (c <= 0) this.session.setCoverage(x, y, 0);
+    for (const [mx, my] of this.mirrored(x, y)) {
+      const k = pixelKey(mx, my);
+      const c = (this.counts.get(k) ?? 1) - 1;
+      this.counts.set(k, c);
+      if (c <= 0) this.session.setCoverage(mx, my, 0);
+    }
   }
 }
 
@@ -115,15 +158,17 @@ class SoftStroke {
   private readonly hardness: number;
   private readonly pressureSize: boolean;
   private readonly pressureOpacity: boolean;
+  private readonly axes: SymmetryAxes | null;
   last: StrokePoint | null = null;
   private remainder = 0;
 
-  constructor(session: PaintSession, size: number, hardness: number, pressureSize: boolean, pressureOpacity: boolean) {
+  constructor(session: PaintSession, size: number, hardness: number, pressureSize: boolean, pressureOpacity: boolean, axes: SymmetryAxes | null = null) {
     this.session = session;
     this.size = size;
     this.hardness = hardness;
     this.pressureSize = pressureSize;
     this.pressureOpacity = pressureOpacity;
+    this.axes = axes;
   }
 
   private diameter(pressure: number): number {
@@ -132,7 +177,16 @@ class SoftStroke {
 
   private dab(p: StrokePoint): void {
     const alpha = this.pressureOpacity ? Math.max(0.02, p.pressure) : 1;
-    this.session.dabSoft(p.x, p.y, this.diameter(p.pressure) / 2, this.hardness, alpha);
+    const r = this.diameter(p.pressure) / 2;
+    const a = this.axes;
+    for (const [x, y] of mirrorPoints(
+      p.x,
+      p.y,
+      a,
+      (v) => 2 * (a?.x ?? 0) - v,
+      (v) => 2 * (a?.y ?? 0) - v,
+    ))
+      this.session.dabSoft(x, y, r, this.hardness, alpha);
   }
 
   begin(p: StrokePoint): void {
@@ -206,13 +260,13 @@ abstract class FreehandTool extends Tool {
     const pt = { x: p.x, y: p.y, pressure: this.pressureOf(p) };
     const prev = p.shift ? e.lastStrokeEnd : null;
     if (this.pixelMode) {
-      this.pixel = new PixelStroke(this.session, o.size, !!o.round, !!o.pixelPerfect, 1);
+      this.pixel = new PixelStroke(this.session, o.size, !!o.round, !!o.pixelPerfect, 1, e.symmetryAxes());
       if (prev) {
         this.pixel.begin(Math.floor(prev.x), Math.floor(prev.y));
         this.pixel.lineTo(Math.floor(pt.x), Math.floor(pt.y));
       } else this.pixel.begin(Math.floor(pt.x), Math.floor(pt.y));
     } else {
-      this.soft = new SoftStroke(this.session, o.size, o.hardness ?? 1, !!o.pressureSize, !!o.pressureOpacity);
+      this.soft = new SoftStroke(this.session, o.size, o.hardness ?? 1, !!o.pressureSize, !!o.pressureOpacity, e.symmetryAxes());
       if (prev) {
         this.soft.begin({ ...prev, pressure: pt.pressure });
         this.soft.lineTo(pt);
@@ -314,6 +368,20 @@ abstract class FreehandTool extends Tool {
   }
 }
 
+/** Shown with every freehand tool; stored in options.symmetry. */
+export const SYMMETRY_SPEC: OptionSpec = {
+  type: 'choice',
+  group: 'symmetry',
+  key: 'mode',
+  label: 'Symmetry',
+  choices: [
+    { value: 'off', label: 'No mirror', title: 'Symmetry off' },
+    { value: 'x', label: '⇆', title: 'Mirror left ↔ right' },
+    { value: 'y', label: '⇅', title: 'Mirror top ↔ bottom' },
+    { value: 'xy', label: '✣', title: 'Mirror both ways (4 copies)' },
+  ],
+};
+
 const PRESSURE_SPECS: OptionSpec[] = [
   { type: 'toggle', key: 'pressureSize', label: 'Pressure → size', title: 'Pen pressure controls brush size' },
   { type: 'toggle', key: 'pressureOpacity', label: 'Pressure → opacity', title: 'Pen pressure controls opacity' },
@@ -330,6 +398,7 @@ export class BrushTool extends FreehandTool {
     { type: 'slider', key: 'hardness', label: 'Hardness', min: 0, max: 1, step: 0.01, percent: true },
     { type: 'slider', key: 'smoothing', label: 'Smoothing', min: 0, max: 1, step: 0.01, percent: true },
     ...PRESSURE_SPECS,
+    SYMMETRY_SPEC,
   ];
   protected get mode() {
     return 'paint' as const;
@@ -352,6 +421,7 @@ export class PencilTool extends FreehandTool {
     { type: 'slider', key: 'opacity', label: 'Opacity', min: 0.01, max: 1, step: 0.01, percent: true },
     { type: 'toggle', key: 'pixelPerfect', label: 'Pixel perfect', title: 'Remove doubled corner pixels in 1px lines' },
     { type: 'toggle', key: 'round', label: 'Round tip', title: 'Round instead of square tip for sizes ≥ 3' },
+    SYMMETRY_SPEC,
   ];
   protected get mode() {
     return 'paint' as const;
@@ -375,6 +445,7 @@ export class EraserTool extends FreehandTool {
     { type: 'toggle', key: 'pixel', label: 'Hard pixels', title: 'Erase whole pixels (no anti-aliasing), like the pencil' },
     { type: 'slider', key: 'hardness', label: 'Hardness', min: 0, max: 1, step: 0.01, percent: true },
     ...PRESSURE_SPECS,
+    SYMMETRY_SPEC,
   ];
   protected get mode() {
     return 'erase' as const;

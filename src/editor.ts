@@ -11,7 +11,7 @@ import { Viewport } from './render/viewport';
 import { type Settings, loadState, saveState } from './settings';
 import { MoveSession } from './tools/move-session';
 import { EllipseSelectTool, FillTool, HandTool, LassoTool, MoveTool, PickerTool, RectSelectTool, WandTool } from './tools/other-tools';
-import { BrushTool, EraserTool, PencilTool } from './tools/paint-tools';
+import { BrushTool, EraserTool, PencilTool, type SymmetryAxes } from './tools/paint-tools';
 import { EllipseTool, LineTool, RectTool } from './tools/shape-tools';
 import type { Tool, ToolId, ToolOptions } from './tools/tool';
 
@@ -33,6 +33,8 @@ export interface EditorEvents {
   /** The document was modified or saved (drives title/autosave). */
   modified: void;
   playback: void;
+  /** Symmetry mode or axis changed outside the options bar (menu, shortcut, dialog). */
+  symmetry: void;
 }
 
 /** Where the current document lives, beyond this browser tab. */
@@ -110,6 +112,7 @@ export class Editor extends Emitter<EditorEvents> {
       hand: new HandTool(this),
     };
     this.tool = this.tools[state.tool && state.tool in this.tools ? state.tool : 'pencil'];
+    this.renderer.overlays.push({ drawOverlay: (ctx, view) => this.drawSymmetryAxes(ctx, view) });
     this.renderer.overlays.push({ drawOverlay: (ctx, view) => this.tool.drawOverlay(ctx, view) });
     this.setDocument(ArtDocument.createBlank(64, 64));
   }
@@ -233,7 +236,74 @@ export class Editor extends Emitter<EditorEvents> {
   beginPaint(params: PaintParams): PaintSession {
     this.commitFloating();
     this.stop();
-    return new PaintSession(this.doc, this.doc.activeCel, params);
+    const session = new PaintSession(this.doc, this.doc.activeCel, params);
+    const t = this.tileWrap();
+    session.wrapX = t.x;
+    session.wrapY = t.y;
+    return session;
+  }
+
+  // ------------------------------------------------- Symmetry & tile mode
+
+  /** Directions in which tile mode repeats the image (and wraps drawing). */
+  tileWrap(): { x: boolean; y: boolean } {
+    const m = this.settings.tileMode;
+    return { x: m === 'both' || m === 'x', y: m === 'both' || m === 'y' };
+  }
+
+  /** Maps a point in a neighbouring tile back onto the canvas (tile mode only). */
+  wrapPoint(x: number, y: number): { x: number; y: number } {
+    const t = this.tileWrap();
+    const { width: w, height: h } = this.doc;
+    return { x: t.x ? x - Math.floor(x / w) * w : x, y: t.y ? y - Math.floor(y / h) * h : y };
+  }
+
+  /** Axis position in pixels (on a half-pixel step); -1 or out of range = canvas center. */
+  private axisPos(v: number, size: number): number {
+    if (!(v >= 0 && v <= size)) return size / 2;
+    return Math.round(v * 2) / 2;
+  }
+
+  /** Active mirror axes for freehand tools, or null when symmetry is off. */
+  symmetryAxes(): SymmetryAxes | null {
+    const s = this.options.symmetry;
+    if (s.mode !== 'x' && s.mode !== 'y' && s.mode !== 'xy') return null;
+    return {
+      x: s.mode !== 'y' ? this.axisPos(s.x, this.doc.width) : null,
+      y: s.mode !== 'x' ? this.axisPos(s.y, this.doc.height) : null,
+    };
+  }
+
+  setSymmetry(patch: Partial<ToolOptions['symmetry']>): void {
+    Object.assign(this.options.symmetry, patch);
+    this.emit('options');
+    this.emit('symmetry');
+    this.renderer.requestRender();
+    this.persist();
+  }
+
+  private drawSymmetryAxes(ctx: CanvasRenderingContext2D, view: Viewport): void {
+    const axes = this.symmetryAxes();
+    if (!axes || !['brush', 'pencil', 'eraser'].includes(this.tool.id)) return;
+    const { width: w, height: h } = this.doc;
+    const lines: [number, number, number, number][] = [];
+    if (axes.x !== null) lines.push([axes.x, 0, axes.x, h]);
+    if (axes.y !== null) lines.push([0, axes.y, w, axes.y]);
+    ctx.beginPath();
+    for (const [x0, y0, x1, y1] of lines) {
+      const a = view.docToScreen(x0, y0);
+      const b = view.docToScreen(x1, y1);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+    }
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.stroke();
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = '#ff5ad1';
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   commitPaint(session: PaintSession, label: string): void {

@@ -17,8 +17,10 @@ import {
   newImageDialog,
   projectsDialog,
   modifySelectionDialog,
+  replaceColorDialog,
   scaleImageDialog,
   settingsDialog,
+  symmetryAxisDialog,
   shortcutsDialog,
 } from './ui/dialogs';
 import { h, icon, iconButton, isTyping } from './ui/dom';
@@ -593,9 +595,9 @@ export class App {
     return this.files.importSpriteSheet();
   }
 
-  async showExport(): Promise<void> {
+  async showExport(content?: ExportSettings['content']): Promise<void> {
     this.editor.commitFloating();
-    exportDialog(this, await webpEncodeSupported());
+    exportDialog(this, await webpEncodeSupported(), content);
   }
 
   exportBaseName(): string {
@@ -644,6 +646,14 @@ export class App {
 
   showCanvasSize(): void {
     canvasSizeDialog(this);
+  }
+
+  showReplaceColor(): void {
+    replaceColorDialog(this);
+  }
+
+  showSymmetryAxis(): void {
+    symmetryAxisDialog(this);
   }
 
   showModifySelection(kind: SelectionModifyKind): void {

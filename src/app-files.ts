@@ -7,7 +7,7 @@ import { parsePalette, toGpl, toHexList } from './core/palette';
 import { type Pixels, Surface, allocPixels } from './core/surface';
 import type { DocumentInfo } from './editor';
 import { type FileType, type PickedFile, downloadBlob, fileNameFor, hasFileSystemAccess, pickFiles, saveFileAs, shareFile, writeToHandle } from './io/files';
-import { type ExportFormat, FORMAT_EXT, FORMAT_MIME, decodeImage, encodeImage, sniffType } from './io/image';
+import { type ExportFormat, FORMAT_EXT, FORMAT_MIME, decodeImage, encodeAnimation, encodeImage, isAnimatedFormat, sniffType } from './io/image';
 import { encodePNG } from './io/png';
 import { PROJECT_EXT, type ProjectExtras, ProjectFormatError, bytesToBase64, deserializeProject, projectToJSON, serializeProject } from './io/project';
 import {
@@ -433,6 +433,8 @@ export class ProjectFiles {
     height: number;
     data: Pixels;
     frames?: { x: number; y: number; w: number; h: number; duration: number }[];
+    /** Every frame, for animated formats. */
+    animation?: { data: Pixels; duration: number }[];
   } {
     const doc = this.editor.doc;
     let width = doc.width;
@@ -460,10 +462,14 @@ export class ProjectFiles {
     } else {
       data = compositeFrame(doc, doc.activeFrame);
     }
+    let animation: { data: Pixels; duration: number }[] | undefined;
+    if (s.content === 'animation') animation = doc.frames.map((f, i) => ({ data: compositeFrame(doc, i), duration: f.duration }));
     if (s.scale !== 1) {
       const nw = Math.max(1, Math.round(width * s.scale));
       const nh = Math.max(1, Math.round(height * s.scale));
-      data = resizePixels(data, width, height, nw, nh, s.scale > 1 ? 'nearest' : 'smooth');
+      const mode = s.scale > 1 ? 'nearest' : 'smooth';
+      data = resizePixels(data, width, height, nw, nh, mode);
+      animation = animation?.map((f) => ({ data: resizePixels(f.data, width, height, nw, nh, mode), duration: f.duration }));
       frames = frames?.map((f) => ({
         x: Math.round(f.x * s.scale),
         y: Math.round(f.y * s.scale),
@@ -474,7 +480,13 @@ export class ProjectFiles {
       width = nw;
       height = nh;
     }
-    return { width, height, data, frames };
+    return { width, height, data, frames, animation };
+  }
+
+  private encodeExport(out: ReturnType<ProjectFiles['renderExport']>, s: ExportSettings): Promise<Blob> {
+    if (out.animation && isAnimatedFormat(s.format)) return encodeAnimation(out.width, out.height, out.animation, s.format);
+    // Still formats only; an animated format without frames falls back to PNG.
+    return encodeImage(out, isAnimatedFormat(s.format) ? 'png' : s.format, s.quality);
   }
 
   exportSize(s: ExportSettings): [number, number] {
@@ -497,14 +509,17 @@ export class ProjectFiles {
     this.app.setBusy(true);
     try {
       const out = this.renderExport(s);
-      const blob = await encodeImage(out, s.format, s.quality);
+      const blob = await this.encodeExport(out, s);
       const fileName = fileNameFor(name || e.doc.name, FORMAT_EXT[s.format]);
       if (share) {
         await shareFile(blob, fileName);
         return true;
       }
       const res = await saveFileAs(blob, fileName, [
-        { description: `${s.format.toUpperCase()} image`, accept: { [FORMAT_MIME[s.format]]: [`.${FORMAT_EXT[s.format]}`] } },
+        {
+          description: `${s.format === 'apng' ? 'Animated PNG' : s.format.toUpperCase()} image`,
+          accept: { [FORMAT_MIME[s.format]]: [`.${FORMAT_EXT[s.format]}`] },
+        },
       ]);
       if (res.status === 'cancelled') return false;
       if (res.status === 'saved') this.lastExport = { handle: res.handle, settings: { ...s }, name: res.handle.name };
@@ -544,7 +559,7 @@ export class ProjectFiles {
     e.commitFloating();
     try {
       const out = this.renderExport(last.settings);
-      const blob = await encodeImage(out, last.settings.format, last.settings.quality);
+      const blob = await this.encodeExport(out, last.settings);
       await writeToHandle(last.handle, blob);
       this.app.toast(`Exported ${last.name}`);
       return true;

@@ -18,7 +18,12 @@ export interface RenderSettings {
   smooth: boolean;
   onionSkin: boolean;
   onionOpacity: number;
+  /** Repeat the image around itself (tile preview). */
+  tileMode?: 'off' | 'both' | 'x' | 'y';
 }
+
+/** At most this many copies are drawn in tile mode (when zoomed far out). */
+const MAX_TILES = 400;
 
 /** Something drawn above the canvas in screen space (brush cursor, marquee...). */
 export interface Overlay {
@@ -193,7 +198,15 @@ export class Renderer {
       pattern.setTransform(new DOMMatrix([cell / CHECKER_TILE, 0, 0, cell / CHECKER_TILE, 0, 0]));
       ctx.fillStyle = pattern;
     } else ctx.fillStyle = CHECKER_A;
-    ctx.fillRect(0, 0, doc.width, doc.height);
+    const tiles = this.tileOffsets(doc);
+    if (tiles.length > 1) {
+      // Tile preview: neighbouring copies, slightly dimmed so the real canvas stays obvious.
+      const xs = tiles.map((t) => t[0]);
+      const ys = tiles.map((t) => t[1]);
+      const x0 = Math.min(...xs);
+      const y0 = Math.min(...ys);
+      ctx.fillRect(x0, y0, Math.max(...xs) - x0 + doc.width, Math.max(...ys) - y0 + doc.height);
+    } else ctx.fillRect(0, 0, doc.width, doc.height);
 
     docTransform();
     ctx.imageSmoothingEnabled = this.settings.smooth;
@@ -212,6 +225,15 @@ export class Renderer {
       ctx.globalAlpha = 1;
     }
 
+    for (const [tx, ty] of tiles) {
+      if (tx === 0 && ty === 0) continue;
+      ctx.drawImage(this.composite, tx, ty);
+    }
+    if (tiles.length > 1) {
+      // Dim the copies.
+      ctx.fillStyle = 'rgba(27,29,33,0.28)';
+      for (const [tx, ty] of tiles) if (tx !== 0 || ty !== 0) ctx.fillRect(tx, ty, doc.width, doc.height);
+    }
     ctx.drawImage(this.composite, 0, 0);
 
     // Overlays are drawn in device space so lines stay 1px wide.
@@ -226,6 +248,26 @@ export class Renderer {
       ctx.restore();
     }
     this.onRender?.();
+  }
+
+  /** Document-space offsets of every copy to draw (just [0, 0] unless tile mode is on). */
+  private tileOffsets(doc: ArtDocument): [number, number][] {
+    const m = this.settings.tileMode;
+    if (!m || m === 'off') return [[0, 0]];
+    const vis = this.view.visibleDocRect();
+    const W = doc.width;
+    const H = doc.height;
+    const rx = m === 'both' || m === 'x';
+    const ry = m === 'both' || m === 'y';
+    const kx0 = rx ? Math.floor(vis.x0 / W) : 0;
+    const kx1 = rx ? Math.floor(vis.x1 / W) : 0;
+    const ky0 = ry ? Math.floor(vis.y0 / H) : 0;
+    const ky1 = ry ? Math.floor(vis.y1 / H) : 0;
+    if ((kx1 - kx0 + 1) * (ky1 - ky0 + 1) > MAX_TILES) return [[0, 0]];
+    const out: [number, number][] = [];
+    for (let ky = ky0; ky <= ky1; ky++) for (let kx = kx0; kx <= kx1; kx++) out.push([kx * W, ky * H]);
+    if (!out.some(([x, y]) => x === 0 && y === 0)) out.push([0, 0]);
+    return out;
   }
 
   private updateComposite(doc: ArtDocument): void {

@@ -241,6 +241,90 @@ export function flipLayer(doc: ArtDocument, history: History, horizontal: boolea
   if (patch) history.push(patch);
 }
 
+// ---------------------------------------------------------- Replace color
+
+export interface ReplaceColorOptions {
+  from: RGBA;
+  to: RGBA;
+  /** 0 = exact match; otherwise the largest allowed difference per channel (0..255). */
+  tolerance: number;
+  /** Every visible layer instead of only the active one. */
+  allLayers: boolean;
+  /** Every frame instead of only the current one. */
+  allFrames: boolean;
+}
+
+/** True when pixel (r, g, b, a) counts as `c` (any fully transparent pixel matches a transparent color). */
+export function colorMatches(r: number, g: number, b: number, a: number, c: RGBA, tolerance: number): boolean {
+  if (c.a === 0 && a === 0) return true;
+  return Math.abs(r - c.r) <= tolerance && Math.abs(g - c.g) <= tolerance && Math.abs(b - c.b) <= tolerance && Math.abs(a - c.a) <= tolerance;
+}
+
+/**
+ * Replaces one color with another inside the selection (or everywhere), on
+ * the active layer or all visible layers, in one frame or all of them.
+ * Returns the number of pixels changed; the whole change is one undo step.
+ */
+export function replaceColor(doc: ArtDocument, history: History, o: ReplaceColorOptions): number {
+  const layers = o.allLayers ? doc.layers.filter((l) => l.visible) : [doc.activeLayer];
+  const frames = o.allFrames ? doc.frames.map((_, i) => i) : [doc.activeFrame];
+  const sel = doc.selection.mask;
+  const area = doc.selection.bounds ?? { x: 0, y: 0, w: doc.width, h: doc.height };
+  const w = doc.width;
+  const t = Math.max(0, Math.min(255, Math.round(o.tolerance)));
+  const patches: Command[] = [];
+  let changed = 0;
+  const seen = new Set<Surface>();
+  for (const layer of layers) {
+    for (const f of frames) {
+      const cel = layer.cels[f];
+      if (seen.has(cel)) continue;
+      seen.add(cel);
+      // Blank cels only hold transparent pixels.
+      const d = cel.data;
+      if (!d) {
+        if (o.from.a !== 0 || o.to.a === 0) continue;
+      }
+      const data = cel.ensureData();
+      // Find what changes first so only the touched tiles are recorded.
+      let bounds: Rect | null = null;
+      const hits: number[] = [];
+      for (let y = area.y; y < area.y + area.h; y++) {
+        for (let x = area.x; x < area.x + area.w; x++) {
+          const i = y * w + x;
+          if (sel && sel[i] < 128) continue;
+          const p = i * 4;
+          if (!colorMatches(data[p], data[p + 1], data[p + 2], data[p + 3], o.from, t)) continue;
+          if (data[p] === o.to.r && data[p + 1] === o.to.g && data[p + 2] === o.to.b && data[p + 3] === o.to.a) continue;
+          hits.push(i);
+          bounds = unionRect(bounds, { x, y, w: 1, h: 1 });
+        }
+      }
+      if (!bounds) {
+        if (!d) cel.data = null;
+        continue;
+      }
+      const rec = new TileRecorder(cel);
+      rec.record(bounds);
+      const transparent = o.to.a === 0;
+      for (const i of hits) {
+        const p = i * 4;
+        data[p] = transparent ? 0 : o.to.r;
+        data[p + 1] = transparent ? 0 : o.to.g;
+        data[p + 2] = transparent ? 0 : o.to.b;
+        data[p + 3] = o.to.a;
+      }
+      changed += hits.length;
+      cel.touch(bounds);
+      doc.notifyPixels(cel, bounds);
+      const patch = rec.finish('Replace color', (s, r) => doc.notifyPixels(s, r));
+      if (patch) patches.push(patch);
+    }
+  }
+  if (patches.length) history.push(patches.length === 1 ? patches[0] : new CompoundCommand('Replace color', patches));
+  return changed;
+}
+
 // ---------------------------------------------------------- Image geometry
 
 /**

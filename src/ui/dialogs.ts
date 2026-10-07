@@ -1,11 +1,11 @@
 import type { App } from '../app';
-import { type RGBA, toCss } from '../core/color';
+import { type RGBA, parseHex, toCss, toHex } from '../core/color';
 import { MAX_DIMENSION } from '../core/document';
 import type { MorphShape } from '../core/morphology';
-import type { ExportFormat } from '../io/image';
+import { type ExportFormat, isAnimatedFormat } from '../io/image';
 import { canShareFile } from '../io/files';
 import type { ProjectMeta } from '../io/storage';
-import { resizeCanvas, scaleImage } from '../ops';
+import { replaceColor, resizeCanvas, scaleImage } from '../ops';
 import type { TouchMode } from '../settings';
 import { checkbox, confirmDialog, field, numberInput, openDialog, readNumber, selectInput } from './dialog';
 import { formatShortcut, h, icon } from './dom';
@@ -84,23 +84,40 @@ export function newImageDialog(app: App, firstRun = false): void {
 export interface ExportSettings {
   format: ExportFormat;
   scale: number;
-  content: 'image' | 'layer' | 'sheet';
+  content: 'image' | 'layer' | 'sheet' | 'animation';
   columns: number;
   padding: number;
   json: boolean;
   quality: number;
 }
 
-export function exportDialog(app: App, webp: boolean): void {
+export function exportDialog(app: App, webp: boolean, initialContent?: ExportSettings['content']): void {
   const e = app.editor;
   const doc = e.doc;
   const s = app.exportSettings;
   const frames = doc.frames.length;
   const name = h('input', { type: 'text', class: 'input', value: app.exportBaseName(), 'aria-label': 'File name', spellcheck: 'false' });
-  const format = selectInput(
-    [{ value: 'png', label: 'PNG (lossless)' }, { value: 'jpeg', label: 'JPEG (no alpha)' }, ...(webp ? [{ value: 'webp', label: 'WebP' }] : [])],
-    s.format === 'webp' && !webp ? 'png' : s.format,
-  );
+  const stillFormats = [
+    { value: 'png', label: 'PNG (lossless)' },
+    { value: 'jpeg', label: 'JPEG (no alpha)' },
+    ...(webp ? [{ value: 'webp', label: 'WebP' }] : []),
+  ];
+  const animFormats = [
+    { value: 'gif', label: 'GIF (plays everywhere)' },
+    { value: 'apng', label: 'APNG (lossless, full alpha)' },
+  ];
+  const format = selectInput(stillFormats, 'png');
+  /** Remembers the last still and animated format separately. */
+  const lastFormat: { still: ExportFormat; anim: 'gif' | 'apng' } = {
+    still: isAnimatedFormat(s.format) || (s.format === 'webp' && !webp) ? 'png' : s.format,
+    anim: isAnimatedFormat(s.format) ? s.format : 'gif',
+  };
+  const setFormats = (animated: boolean) => {
+    const opts = animated ? animFormats : stillFormats;
+    const want = animated ? lastFormat.anim : lastFormat.still;
+    format.replaceChildren(...opts.map((o) => h('option', { value: o.value }, o.label)));
+    format.value = opts.some((o) => o.value === want) ? want : opts[0].value;
+  };
   const scale = selectInput(
     [0.25, 0.5, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16].map((v) => ({
       value: String(v),
@@ -113,9 +130,19 @@ export function exportDialog(app: App, webp: boolean): void {
       { value: 'image', label: frames > 1 ? 'Image (current frame)' : 'Image' },
       { value: 'layer', label: 'Active layer only' },
       ...(frames > 1 ? [{ value: 'sheet', label: `Sprite sheet (all ${frames} frames)` }] : []),
+      { value: 'animation', label: frames > 1 ? `Animation (all ${frames} frames)` : 'Animation (add frames to animate)' },
     ],
-    s.content === 'sheet' && frames < 2 ? 'image' : s.content,
+    (() => {
+      const c = initialContent ?? s.content;
+      return c === 'sheet' && frames < 2 ? 'image' : c;
+    })(),
   );
+  setFormats(content.value === 'animation');
+  content.addEventListener('input', () => setFormats(content.value === 'animation'));
+  format.addEventListener('input', () => {
+    if (content.value === 'animation') lastFormat.anim = format.value as 'gif' | 'apng';
+    else lastFormat.still = format.value as ExportFormat;
+  });
   const columns = numberInput(Math.min(s.columns || frames, frames), 1, frames);
   const padding = numberInput(s.padding, 0, 64);
   const json = checkbox('Also save frame data (.json)', s.json, 'Frame rectangles and durations, compatible with common game engines');
@@ -137,9 +164,14 @@ export function exportDialog(app: App, webp: boolean): void {
   const update = () => {
     const r = read();
     sheetBox.hidden = r.content !== 'sheet';
-    qualityField.hidden = r.format === 'png';
+    qualityField.hidden = r.format !== 'jpeg' && r.format !== 'webp';
     const [w, hgt] = app.exportSize(r);
-    info.textContent = `Output: ${w} × ${hgt} px${r.format === 'jpeg' ? ' · transparency becomes the background color' : ''}`;
+    const notes: Record<string, string> = {
+      jpeg: ' · transparency becomes the background color',
+      gif: ` · ${frames} frame${frames === 1 ? '' : 's'}, loops · semi-transparent pixels become fully opaque or transparent`,
+      apng: ` · ${frames} frame${frames === 1 ? '' : 's'}, loops`,
+    };
+    info.textContent = `Output: ${w} × ${hgt} px${notes[r.format] ?? ''}`;
   };
   for (const el of [format, scale, content, columns, padding, quality]) el.addEventListener('input', update);
   update();
@@ -156,8 +188,9 @@ export function exportDialog(app: App, webp: boolean): void {
       : []),
     { label: 'Export', primary: true, onClick: () => doExport(false).then((ok) => ok !== false) },
   ];
-  openDialog({
-    title: 'Export image',
+  const titleFor = () => (content.value === 'animation' ? 'Export animation' : 'Export image');
+  const dlg = openDialog({
+    title: titleFor(),
     content: [
       field('File name', name),
       field('Content', content),
@@ -167,6 +200,10 @@ export function exportDialog(app: App, webp: boolean): void {
       info,
     ],
     buttons,
+  });
+  content.addEventListener('input', () => {
+    const t = dlg.el.querySelector('h2');
+    if (t) t.textContent = titleFor();
   });
 }
 
@@ -268,6 +305,147 @@ export function scaleImageDialog(app: App): void {
             mode.value as 'nearest' | 'smooth',
           );
           e.fitView();
+        },
+      },
+    ],
+  });
+}
+
+// ------------------------------------------------------------- Replace color
+
+const replaceDefaults = { tolerance: 0, allLayers: false, allFrames: false };
+
+/** A hex field with a live swatch and buttons to load the foreground/background color. */
+function colorField(app: App, label: string, initial: RGBA): { el: HTMLElement; read: () => RGBA | null } {
+  const e = app.editor;
+  const input = h('input', { type: 'text', class: 'input mono', value: toHex(initial), spellcheck: 'false', 'aria-label': label, maxlength: '9' });
+  const chip = colorChip(initial);
+  const sync = () => {
+    const c = parseHex(input.value);
+    chip.style.background = c ? toCss(c) : 'transparent';
+    input.classList.toggle('invalid', !c);
+  };
+  input.addEventListener('input', sync);
+  const use = (which: 'fg' | 'bg', text: string) => {
+    const b = h(
+      'button',
+      {
+        type: 'button',
+        class: 'chip',
+        title: `Use the ${which === 'fg' ? 'foreground' : 'background'} color`,
+        'aria-label': `${label}: ${which === 'fg' ? 'foreground' : 'background'} color`,
+      },
+      text,
+    );
+    b.addEventListener('click', () => {
+      input.value = toHex(e[which]);
+      sync();
+    });
+    return b;
+  };
+  const clear = h('button', { type: 'button', class: 'chip', title: 'Fully transparent', 'aria-label': `${label}: transparent` }, 'Transparent');
+  clear.addEventListener('click', () => {
+    input.value = '#00000000';
+    sync();
+  });
+  const row = h('div', { class: 'color-field' }, chip, input, use('fg', 'FG'), use('bg', 'BG'), clear);
+  return { el: field(label, row), read: () => parseHex(input.value) };
+}
+
+export function replaceColorDialog(app: App): void {
+  const e = app.editor;
+  const d = replaceDefaults;
+  const from = colorField(app, 'Replace', e.fg);
+  const to = colorField(app, 'With', e.bg);
+  const tol = numberInput(d.tolerance, 0, 255);
+  const layers = checkbox('All visible layers', d.allLayers);
+  const frames = checkbox('All frames', d.allFrames);
+  const frameCount = e.doc.frames.length;
+  const content: Node[] = [from.el, to.el, field('Tolerance', tol, '0 = only this exact color')];
+  content.push(layers.el);
+  if (frameCount > 1) content.push(frames.el);
+  if (e.doc.selection.active) content.push(h('p', { class: 'field-hint' }, 'Only pixels inside the selection are changed.'));
+  openDialog({
+    title: 'Replace color',
+    content,
+    buttons: [
+      { label: 'Cancel' },
+      {
+        label: 'Replace',
+        primary: true,
+        onClick: () => {
+          const a = from.read();
+          const b = to.read();
+          if (!a || !b) {
+            e.toast('Enter colors as #RRGGBB or #RRGGBBAA', true);
+            return false;
+          }
+          d.tolerance = readNumber(tol, 0, 255, 0);
+          d.allLayers = layers.input.checked;
+          d.allFrames = frames.input.checked;
+          e.commitFloating();
+          if (!d.allLayers && !e.canEditPixels()) return;
+          const n = replaceColor(e.doc, e.history, { from: a, to: b, ...d, allFrames: d.allFrames && frameCount > 1 });
+          e.toast(n ? `Replaced ${n} pixel${n === 1 ? '' : 's'}` : 'No pixels of that color found');
+        },
+      },
+    ],
+  });
+}
+
+// ------------------------------------------------------------- Symmetry axis
+
+export function symmetryAxisDialog(app: App): void {
+  const e = app.editor;
+  const doc = e.doc;
+  const sym = e.options.symmetry;
+  const cur = (v: number, size: number) => (v >= 0 && v <= size ? v : size / 2);
+  const x = numberInput(cur(sym.x, doc.width), 0, doc.width, 0.5);
+  const y = numberInput(cur(sym.y, doc.height), 0, doc.height, 0.5);
+  const mode = selectInput(
+    [
+      { value: 'off', label: 'Off' },
+      { value: 'x', label: 'Mirror left ↔ right' },
+      { value: 'y', label: 'Mirror top ↔ bottom' },
+      { value: 'xy', label: 'Both (4 copies)' },
+    ],
+    sym.mode,
+  );
+  const center = h('button', { type: 'button', class: 'chip' }, 'Center');
+  center.addEventListener('click', () => {
+    x.value = String(doc.width / 2);
+    y.value = String(doc.height / 2);
+  });
+  const read = (input: HTMLInputElement, size: number) => {
+    const v = Number(input.value);
+    return Number.isFinite(v) ? Math.max(0, Math.min(size, Math.round(v * 2) / 2)) : size / 2;
+  };
+  openDialog({
+    title: 'Symmetry',
+    content: [
+      field('Mirror', mode),
+      h('div', { class: 'row' }, field('Vertical axis at x', x), field('Horizontal axis at y', y)),
+      h('div', { class: 'chips' }, center),
+      h(
+        'p',
+        { class: 'field-hint' },
+        'Brush, pencil and eraser strokes are mirrored across the pink axis lines. Use .5 to put the axis through the middle of a pixel.',
+      ),
+    ],
+    buttons: [
+      { label: 'Cancel' },
+      {
+        label: 'Apply',
+        primary: true,
+        onClick: () => {
+          const xv = read(x, doc.width);
+          const yv = read(y, doc.height);
+          // Store "center" as -1 so it follows the canvas when its size changes.
+          e.setSymmetry({
+            mode: mode.value as 'off' | 'x' | 'y' | 'xy',
+            x: xv === doc.width / 2 ? -1 : xv,
+            y: yv === doc.height / 2 ? -1 : yv,
+          });
         },
       },
     ],

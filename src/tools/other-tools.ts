@@ -27,8 +27,9 @@ export class FillTool extends Tool {
   override down(p: ToolPointer): void {
     const e = this.editor;
     const doc = e.doc;
-    const x = Math.floor(p.x);
-    const y = Math.floor(p.y);
+    const w = e.wrapPoint(p.x, p.y);
+    const x = Math.floor(w.x);
+    const y = Math.floor(w.y);
     if (x < 0 || y < 0 || x >= doc.width || y >= doc.height) return;
     if (!e.canEditPixels()) return;
     const o = e.options.fill;
@@ -79,8 +80,9 @@ export class PickerTool extends Tool {
   pick(p: { x: number; y: number }, target: 'fg' | 'bg' = this.target, merged = this.editor.options.picker.sampleMerged): void {
     const e = this.editor;
     const doc = e.doc;
-    const x = Math.floor(p.x);
-    const y = Math.floor(p.y);
+    const w = e.wrapPoint(p.x, p.y);
+    const x = Math.floor(w.x);
+    const y = Math.floor(w.y);
     if (x < 0 || y < 0 || x >= doc.width || y >= doc.height) return;
     const [r, g, b, a] = merged ? sampleComposite(doc, doc.activeFrame, x, y) : doc.activeCel.getPixel(x, y);
     if (a === 0) return; // Transparent: keep the current color.
@@ -322,8 +324,9 @@ export class WandTool extends Tool {
   override down(p: ToolPointer): void {
     const e = this.editor;
     const doc = e.doc;
-    const x = Math.floor(p.x);
-    const y = Math.floor(p.y);
+    const w = e.wrapPoint(p.x, p.y);
+    const x = Math.floor(w.x);
+    const y = Math.floor(w.y);
     if (x < 0 || y < 0 || x >= doc.width || y >= doc.height) return;
     const o = e.options.wand;
     const src = o.sampleMerged ? compositeFrame(doc, doc.activeFrame) : doc.activeCel.data;

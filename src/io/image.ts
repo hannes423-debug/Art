@@ -1,12 +1,24 @@
 import type { RGBA } from '../core/color';
 import { MAX_DIMENSION } from '../core/document';
 import { type Pixels, allocPixels } from '../core/surface';
-import { type RawImage, decodePNG, encodePNG, hasCompressionStreams, isPNG } from './png';
+import { encodeGIF } from './gif';
+import { type AnimationFrame, type RawImage, decodePNG, encodeAPNG, encodePNG, hasCompressionStreams, isPNG } from './png';
 
-export type ExportFormat = 'png' | 'jpeg' | 'webp';
+/** Still image formats, plus animated GIF and APNG (all frames). */
+export type ExportFormat = 'png' | 'jpeg' | 'webp' | 'gif' | 'apng';
 
-export const FORMAT_MIME: Record<ExportFormat, string> = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp' };
-export const FORMAT_EXT: Record<ExportFormat, string> = { png: 'png', jpeg: 'jpg', webp: 'webp' };
+export const FORMAT_MIME: Record<ExportFormat, string> = {
+  png: 'image/png',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  apng: 'image/png',
+};
+export const FORMAT_EXT: Record<ExportFormat, string> = { png: 'png', jpeg: 'jpg', webp: 'webp', gif: 'gif', apng: 'png' };
+
+export function isAnimatedFormat(f: ExportFormat): f is 'gif' | 'apng' {
+  return f === 'gif' || f === 'apng';
+}
 
 /** Detects common formats from file contents (extensions and MIME types are unreliable on mobile). */
 export function sniffType(bytes: Uint8Array): 'png' | 'jpeg' | 'gif' | 'webp' | 'bmp' | 'json' | 'unknown' {
@@ -133,4 +145,11 @@ export async function encodeImage(img: RawImage, format: ExportFormat, quality =
   const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, FORMAT_MIME[format], quality));
   if (!blob) throw new Error('The browser could not encode the image.');
   return blob;
+}
+
+/** Encodes animation frames as a looping GIF or APNG. */
+export async function encodeAnimation(width: number, height: number, frames: AnimationFrame[], format: 'gif' | 'apng'): Promise<Blob> {
+  if (format === 'gif') return new Blob([encodeGIF(width, height, frames) as Uint8Array<ArrayBuffer>], { type: 'image/gif' });
+  if (!hasCompressionStreams()) throw new Error('This browser cannot create APNG files. Try GIF.');
+  return new Blob([(await encodeAPNG(width, height, frames)) as Uint8Array<ArrayBuffer>], { type: 'image/png' });
 }

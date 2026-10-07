@@ -23,7 +23,8 @@ function fromPos(spec: Extract<OptionSpec, { type: 'slider' }>, pos: number): nu
 }
 
 /** Builds the control for one option spec bound to editor.options[key]. */
-export function optionControl(editor: Editor, key: string, spec: OptionSpec, large = false): HTMLElement {
+export function optionControl(editor: Editor, toolKey: string, spec: OptionSpec, large = false): HTMLElement {
+  const key = spec.group ?? toolKey;
   const group = (editor.options as unknown as Record<string, Record<string, unknown>>)[key];
   if (spec.type === 'slider') {
     const value = Number(group[spec.key]);
@@ -126,6 +127,7 @@ export class OptionsBar {
       this.render();
     });
     editor.on('tool', () => this.render());
+    editor.on('symmetry', () => this.render());
     editor.on('hint', (t) => this.setHint(t));
     editor.on('modified', () => this.renderExtras());
     this.render();

@@ -104,6 +104,7 @@ export const MENUS: MenuDef[] = [
       'file.importSheet',
       '-',
       'file.export',
+      'file.exportAnim',
       'file.reexport',
     ],
   },
@@ -123,6 +124,7 @@ export const MENUS: MenuDef[] = [
       'edit.clear',
       'edit.fillFg',
       'edit.fillBg',
+      'edit.replaceColor',
       '-',
       'app.settings',
     ],
@@ -185,7 +187,20 @@ export const MENUS: MenuDef[] = [
   {
     id: 'frame',
     label: 'Frame',
-    items: ['frame.new', 'frame.duplicate', 'frame.delete', '-', 'frame.prev', 'frame.next', 'frame.play', '-', 'view.onion', 'view.timeline'],
+    items: [
+      'frame.new',
+      'frame.duplicate',
+      'frame.delete',
+      '-',
+      'frame.prev',
+      'frame.next',
+      'frame.play',
+      '-',
+      'view.onion',
+      'view.timeline',
+      '-',
+      'file.exportAnim',
+    ],
   },
   {
     id: 'view',
@@ -206,6 +221,14 @@ export const MENUS: MenuDef[] = [
       'view.snap',
       'view.gridSettings',
       'view.smooth',
+      '-',
+      'view.symmetryX',
+      'view.symmetryY',
+      'view.symmetryAxis',
+      '-',
+      'view.tile',
+      'view.tileX',
+      'view.tileY',
       '-',
       'view.timeline',
       'view.panel',
@@ -254,6 +277,7 @@ export function createActions(app: App): ActionRegistry {
     { id: 'file.importLayer', label: 'Import image as layer…', icon: 'image', run: () => app.importAsLayer() },
     { id: 'file.importSheet', label: 'Import sprite sheet…', icon: 'film', run: () => app.importSpriteSheet() },
     { id: 'file.export', label: 'Export image…', keys: ['mod+e'], icon: 'share', run: () => app.showExport() },
+    { id: 'file.exportAnim', label: 'Export animation (GIF/APNG)…', icon: 'film', run: () => app.showExport('animation') },
     {
       id: 'file.reexport',
       label: 'Export again',
@@ -290,6 +314,12 @@ export function createActions(app: App): ActionRegistry {
       label: 'Fill with background',
       keys: ['mod+backspace'],
       run: () => editable() && fillPixels(doc(), hist(), e.bg, doc().activeLayer.alphaLocked),
+    },
+    {
+      id: 'edit.replaceColor',
+      label: 'Replace color…',
+      keys: ['shift+r'],
+      run: () => app.showReplaceColor(),
     },
     { id: 'app.settings', label: 'Settings…', icon: 'settings', run: () => app.showSettings() },
 
@@ -412,6 +442,48 @@ export function createActions(app: App): ActionRegistry {
       label: 'Smooth zoom (not pixel-crisp)',
       run: () => e.updateSettings({ smooth: !e.settings.smooth }),
       checked: () => e.settings.smooth,
+    },
+    {
+      id: 'view.symmetryX',
+      label: 'Symmetry: mirror left ↔ right',
+      keys: ['alt+x'],
+      run: () => {
+        const m = e.options.symmetry.mode;
+        e.setSymmetry({ mode: m === 'x' ? 'off' : m === 'y' ? 'xy' : m === 'xy' ? 'y' : 'x' });
+        if (e.options.symmetry.mode !== 'off' && !['brush', 'pencil', 'eraser'].includes(e.tool.id)) e.setTool('pencil');
+      },
+      checked: () => e.options.symmetry.mode === 'x' || e.options.symmetry.mode === 'xy',
+    },
+    {
+      id: 'view.symmetryY',
+      label: 'Symmetry: mirror top ↔ bottom',
+      keys: ['alt+y'],
+      run: () => {
+        const m = e.options.symmetry.mode;
+        e.setSymmetry({ mode: m === 'y' ? 'off' : m === 'x' ? 'xy' : m === 'xy' ? 'x' : 'y' });
+        if (e.options.symmetry.mode !== 'off' && !['brush', 'pencil', 'eraser'].includes(e.tool.id)) e.setTool('pencil');
+      },
+      checked: () => e.options.symmetry.mode === 'y' || e.options.symmetry.mode === 'xy',
+    },
+    { id: 'view.symmetryAxis', label: 'Symmetry settings…', run: () => app.showSymmetryAxis() },
+    {
+      id: 'view.tile',
+      label: 'Tile preview',
+      keys: ['alt+t'],
+      run: () => e.updateSettings({ tileMode: e.settings.tileMode === 'both' ? 'off' : 'both' }),
+      checked: () => e.settings.tileMode === 'both',
+    },
+    {
+      id: 'view.tileX',
+      label: 'Tile preview: horizontal only',
+      run: () => e.updateSettings({ tileMode: e.settings.tileMode === 'x' ? 'off' : 'x' }),
+      checked: () => e.settings.tileMode === 'x',
+    },
+    {
+      id: 'view.tileY',
+      label: 'Tile preview: vertical only',
+      run: () => e.updateSettings({ tileMode: e.settings.tileMode === 'y' ? 'off' : 'y' }),
+      checked: () => e.settings.tileMode === 'y',
     },
     { id: 'view.onion', label: 'Onion skin', run: () => e.updateSettings({ onionSkin: !e.settings.onionSkin }), checked: () => e.settings.onionSkin },
     {

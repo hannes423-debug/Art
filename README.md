@@ -34,6 +34,7 @@ fast and canvas-first.
 - Fill bucket with tolerance, contiguous/global, and "sample all layers"
 - Color picker (Alt+click in paint tools), right mouse button paints with the background color
 - Shift+click draws a straight line from the last stroke
+- Symmetry: mirror brush, pencil and eraser strokes left ↔ right, top ↔ bottom or both, around a movable axis (Alt+X, Alt+Y)
 - Uniform stroke opacity: overlapping dabs inside one stroke never get darker
 
 **Selection & transform**
@@ -52,6 +53,9 @@ fast and canvas-first.
 - Crisp nearest-neighbour zoom, pixel grid when zoomed in, configurable tile grid, snap to grid
 - Exact pixel coordinates and selection size in the status bar
 - Frames with onion skin and animation playback (FPS)
+- Export animations as looping GIF or lossless APNG (with per-frame timing)
+- Tile preview (Alt+T): the image repeats around itself and drawing wraps across the edges, for seamless tiles and textures
+- Replace color (Shift+R) on one layer or all layers and frames, with tolerance; color → transparent works too
 - Sprite sheet import (slice by cell size, offset and gap) and export (strip or grid, with padding and frame-data JSON)
 - Export scaled up 2×–16× without blurring
 - Palettes: DawnBringer 32, PICO-8, Game Boy, grayscale; import GIMP `.gpl`, `.hex` and JASC `.pal`; export `.gpl` and `.hex`; extract colors from a layer
@@ -222,8 +226,7 @@ rules (no ads, tracking or paywalls; no dead buttons; exact pixels).
 ## Roadmap
 
 Next steps being considered: a layer/frame timeline with per-cel linking and
-tags, animated GIF/APNG export, more blend modes, layer groups, text,
-gradients, a color-replace tool, symmetry drawing, tile-mode preview, palette
+tags, more blend modes, layer groups, text, gradients, palette
 locking/indexed mode, and moving PNG encoding to a worker for very large
 images.
 

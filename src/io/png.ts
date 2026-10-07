@@ -67,32 +67,40 @@ export interface EncodeOptions {
   allowPalette?: boolean;
 }
 
-export async function encodePNG(width: number, height: number, rgba: Uint8ClampedArray, opts: EncodeOptions = {}): Promise<Uint8Array> {
-  if (rgba.length !== width * height * 4) throw new Error('encodePNG: data length mismatch');
-  const canon = opts.canonicalizeTransparent !== false;
-  const n = width * height;
+/** Color type, bit depth and palette chosen for one or more images of the same size. */
+interface PngFormat {
+  colorType: number;
+  bitDepth: number;
+  canon: boolean;
+  /** Packed RGBA → palette index (color type 3). */
+  colors: Map<number, number>;
+  chunks: Uint8Array[];
+}
 
-  // Analyze the image to choose the most compact lossless color type.
+/** Analyzes images to choose the most compact lossless color type that fits all of them. */
+function analyze(images: Uint8ClampedArray[], opts: EncodeOptions): PngFormat {
+  const canon = opts.canonicalizeTransparent !== false;
   let hasAlpha = false;
   let gray = true;
   let paletteOK = opts.allowPalette !== false;
   const colors = new Map<number, number>();
-  for (let i = 0; i < n; i++) {
-    const o = i * 4;
-    const a = rgba[o + 3];
-    let r = rgba[o];
-    let g = rgba[o + 1];
-    let b = rgba[o + 2];
-    if (a === 0 && canon) r = g = b = 0;
-    if (a !== 255) hasAlpha = true;
-    if (gray && (r !== g || g !== b)) gray = false;
-    if (paletteOK) {
-      const key = ((r << 24) | (g << 16) | (b << 8) | a) >>> 0;
-      if (!colors.has(key)) {
-        if (colors.size >= 256) {
-          paletteOK = false;
-          colors.clear();
-        } else colors.set(key, colors.size);
+  for (const rgba of images) {
+    for (let o = 0; o < rgba.length; o += 4) {
+      const a = rgba[o + 3];
+      let r = rgba[o];
+      let g = rgba[o + 1];
+      let b = rgba[o + 2];
+      if (a === 0 && canon) r = g = b = 0;
+      if (a !== 255) hasAlpha = true;
+      if (gray && (r !== g || g !== b)) gray = false;
+      if (paletteOK) {
+        const key = ((r << 24) | (g << 16) | (b << 8) | a) >>> 0;
+        if (!colors.has(key)) {
+          if (colors.size >= 256) {
+            paletteOK = false;
+            colors.clear();
+          } else colors.set(key, colors.size);
+        }
       }
     }
   }
@@ -107,8 +115,6 @@ export async function encodePNG(width: number, height: number, rgba: Uint8Clampe
   else colorType = 6;
 
   const chunks: Uint8Array[] = [];
-  let raw: Uint8Array;
-
   if (colorType === 3) {
     // Translucent entries first so tRNS stays short.
     const keys = [...colors.keys()].sort((p, q) => {
@@ -127,8 +133,22 @@ export async function encodePNG(width: number, height: number, rgba: Uint8Clampe
       plte[i * 3 + 2] = (k >>> 8) & 255;
       if ((k & 255) !== 255) trnsLen = i + 1;
     });
+    chunks.push(makeChunk('PLTE', plte));
+    if (trnsLen > 0) {
+      const trns = new Uint8Array(trnsLen);
+      for (let i = 0; i < trnsLen; i++) trns[i] = keys[i] & 255;
+      chunks.push(makeChunk('tRNS', trns));
+    }
+  }
+  return { colorType, bitDepth, canon, colors, chunks };
+}
+
+/** Filtered scanlines of one image in the chosen format (before zlib). */
+function rawScanlines(width: number, height: number, rgba: Uint8ClampedArray, fmt: PngFormat): Uint8Array {
+  const { colorType, bitDepth, canon, colors } = fmt;
+  if (colorType === 3) {
     const rowBytes = Math.ceil((width * bitDepth) / 8);
-    raw = new Uint8Array((rowBytes + 1) * height);
+    const raw = new Uint8Array((rowBytes + 1) * height);
     for (let y = 0; y < height; y++) {
       const rowStart = y * (rowBytes + 1) + 1; // filter byte 0 (None) is already zero
       for (let x = 0; x < width; x++) {
@@ -143,57 +163,101 @@ export async function encodePNG(width: number, height: number, rgba: Uint8Clampe
         }
       }
     }
-    chunks.push(makeChunk('PLTE', plte));
-    if (trnsLen > 0) {
-      const trns = new Uint8Array(trnsLen);
-      for (let i = 0; i < trnsLen; i++) trns[i] = keys[i] & 255;
-      chunks.push(makeChunk('tRNS', trns));
-    }
-  } else {
-    const channels = colorType === 0 ? 1 : colorType === 4 ? 2 : colorType === 2 ? 3 : 4;
-    const rowBytes = width * channels;
-    raw = new Uint8Array((rowBytes + 1) * height);
-    let prev = new Uint8Array(rowBytes);
-    let cur = new Uint8Array(rowBytes);
-    const candidates = [0, 1, 2, 3, 4].map(() => new Uint8Array(rowBytes));
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const o = (y * width + x) * 4;
-        const a = rgba[o + 3];
-        const zero = a === 0 && canon;
-        const r = zero ? 0 : rgba[o];
-        const p = x * channels;
-        if (colorType === 0) cur[p] = r;
-        else if (colorType === 4) {
-          cur[p] = r;
-          cur[p + 1] = a;
-        } else {
-          cur[p] = r;
-          cur[p + 1] = zero ? 0 : rgba[o + 1];
-          cur[p + 2] = zero ? 0 : rgba[o + 2];
-          if (colorType === 6) cur[p + 3] = a;
-        }
-      }
-      const best = chooseFilter(cur, prev, channels, candidates);
-      const off = y * (rowBytes + 1);
-      raw[off] = best;
-      raw.set(candidates[best], off + 1);
-      [prev, cur] = [cur, prev];
-    }
+    return raw;
   }
+  const channels = colorType === 0 ? 1 : colorType === 4 ? 2 : colorType === 2 ? 3 : 4;
+  const rowBytes = width * channels;
+  const raw = new Uint8Array((rowBytes + 1) * height);
+  let prev = new Uint8Array(rowBytes);
+  let cur = new Uint8Array(rowBytes);
+  const candidates = [0, 1, 2, 3, 4].map(() => new Uint8Array(rowBytes));
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const o = (y * width + x) * 4;
+      const a = rgba[o + 3];
+      const zero = a === 0 && canon;
+      const r = zero ? 0 : rgba[o];
+      const p = x * channels;
+      if (colorType === 0) cur[p] = r;
+      else if (colorType === 4) {
+        cur[p] = r;
+        cur[p + 1] = a;
+      } else {
+        cur[p] = r;
+        cur[p + 1] = zero ? 0 : rgba[o + 1];
+        cur[p + 2] = zero ? 0 : rgba[o + 2];
+        if (colorType === 6) cur[p + 3] = a;
+      }
+    }
+    const best = chooseFilter(cur, prev, channels, candidates);
+    const off = y * (rowBytes + 1);
+    raw[off] = best;
+    raw.set(candidates[best], off + 1);
+    [prev, cur] = [cur, prev];
+  }
+  return raw;
+}
 
+function ihdrChunk(width: number, height: number, fmt: PngFormat): Uint8Array {
   const ihdr = new Uint8Array(13);
   const dv = new DataView(ihdr.buffer);
   dv.setUint32(0, width);
   dv.setUint32(4, height);
-  ihdr[8] = bitDepth;
-  ihdr[9] = colorType;
+  ihdr[8] = fmt.bitDepth;
+  ihdr[9] = fmt.colorType;
   ihdr[10] = 0; // compression
   ihdr[11] = 0; // filter method
   ihdr[12] = 0; // no interlace
+  return makeChunk('IHDR', ihdr);
+}
 
-  const idat = await zlibCompress(raw);
-  const parts = [new Uint8Array(SIGNATURE), makeChunk('IHDR', ihdr), ...chunks, makeChunk('IDAT', idat), makeChunk('IEND', new Uint8Array(0))];
+export async function encodePNG(width: number, height: number, rgba: Uint8ClampedArray, opts: EncodeOptions = {}): Promise<Uint8Array> {
+  if (rgba.length !== width * height * 4) throw new Error('encodePNG: data length mismatch');
+  const fmt = analyze([rgba], opts);
+  const idat = await zlibCompress(rawScanlines(width, height, rgba, fmt));
+  const parts = [new Uint8Array(SIGNATURE), ihdrChunk(width, height, fmt), ...fmt.chunks, makeChunk('IDAT', idat), makeChunk('IEND', new Uint8Array(0))];
+  return concat(parts);
+}
+
+export interface AnimationFrame {
+  data: Uint8ClampedArray;
+  /** Display time in milliseconds. */
+  duration: number;
+}
+
+/**
+ * Encodes an animated PNG (APNG), lossless with full alpha. Browsers that
+ * do not support APNG show the first frame. All frames share one color
+ * type (and palette, when every frame together has at most 256 colors).
+ */
+export async function encodeAPNG(width: number, height: number, frames: AnimationFrame[], loops = 0): Promise<Uint8Array> {
+  if (!frames.length) throw new Error('encodeAPNG: no frames');
+  for (const f of frames) if (f.data.length !== width * height * 4) throw new Error('encodeAPNG: data length mismatch');
+  const fmt = analyze(
+    frames.map((f) => f.data),
+    {},
+  );
+  const u32 = (v: number) => [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+  const u16 = (v: number) => [(v >>> 8) & 255, v & 255];
+  const parts: Uint8Array[] = [new Uint8Array(SIGNATURE), ihdrChunk(width, height, fmt)];
+  parts.push(makeChunk('acTL', new Uint8Array([...u32(frames.length), ...u32(loops)])));
+  parts.push(...fmt.chunks);
+  let seq = 0;
+  for (let i = 0; i < frames.length; i++) {
+    const f = frames[i];
+    const ms = Math.max(1, Math.min(65535, Math.round(f.duration)));
+    // fcTL: full-size frame at 0,0; dispose none; blend source (frames replace each other).
+    parts.push(makeChunk('fcTL', new Uint8Array([...u32(seq++), ...u32(width), ...u32(height), ...u32(0), ...u32(0), ...u16(ms), ...u16(1000), 0, 0])));
+    const data = await zlibCompress(rawScanlines(width, height, f.data, fmt));
+    if (i === 0) parts.push(makeChunk('IDAT', data));
+    else {
+      const fd = new Uint8Array(4 + data.length);
+      fd.set(u32(seq++), 0);
+      fd.set(data, 4);
+      parts.push(makeChunk('fdAT', fd));
+    }
+  }
+  parts.push(makeChunk('IEND', new Uint8Array(0)));
   return concat(parts);
 }
 
