@@ -182,6 +182,25 @@ export class OptionsBar {
     const x = this.extras;
     x.replaceChildren();
     if (e.floating) {
+      const f = e.floating;
+      const tbtn = (label: string, title: string, fn: () => void, on = false) => {
+        const b = h('button', { type: 'button', class: `opt opt-toggle ${on ? 'on' : ''}`.trim(), title, 'aria-pressed': on ? 'true' : undefined }, label);
+        b.addEventListener('click', () => {
+          fn();
+          e.renderer.requestRender();
+          this.renderExtras();
+        });
+        return b;
+      };
+      x.append(
+        tbtn('⇆', 'Flip horizontally', () => f.setTransform({ sx: -f.xf.sx })),
+        tbtn('⇅', 'Flip vertically', () => f.setTransform({ sy: -f.xf.sy })),
+        tbtn('↻ 90°', 'Rotate 90° clockwise', () =>
+          f.setTransform({ angle: Math.atan2(Math.sin(f.xf.angle + Math.PI / 2), Math.cos(f.xf.angle + Math.PI / 2)) }),
+        ),
+        tbtn('Smooth', 'Smooth resampling when scaling or rotating (off: crisp pixels)', () => f.setTransform({ smooth: !f.xf.smooth }), f.xf.smooth),
+        tbtn('Reset', 'Undo scaling and rotation', () => f.setTransform({ sx: 1, sy: 1, angle: 0 })),
+      );
       const apply = h('button', { type: 'button', class: 'btn small primary' }, 'Apply');
       apply.addEventListener('click', () => {
         e.commitFloating();

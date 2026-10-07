@@ -368,6 +368,18 @@ export class WandTool extends Tool {
   }
 }
 
+type Handle = { kind: 'scale'; hx: -1 | 0 | 1; hy: -1 | 0 | 1 } | { kind: 'rotate' };
+
+/** Screen distance (px) at which a transform handle is grabbed. */
+function handleRadius(p: ToolPointer): number {
+  return p.pointerType === 'touch' ? 18 : 9;
+}
+
+/**
+ * Moves the selection (or the whole layer). While pixels are floating,
+ * handles on their box scale (Shift: keep proportions) and rotate them
+ * (Shift: 15° steps); dragging inside moves them.
+ */
 export class MoveTool extends Tool {
   readonly id: ToolId = 'move';
   readonly label = 'Move';
@@ -375,37 +387,161 @@ export class MoveTool extends Tool {
   override readonly editsPixels = true;
   override cursor = 'move';
   private drag: { x: number; y: number; dx0: number; dy0: number } | null = null;
+  private xdrag: {
+    handle: Handle;
+    sx0: number;
+    sy0: number;
+    angle0: number;
+    /** Fixed point (document) while scaling: the opposite handle. */
+    anchor: { x: number; y: number };
+    start: { x: number; y: number };
+    center0: { x: number; y: number };
+    dx0: number;
+    dy0: number;
+  } | null = null;
 
   override get busy(): boolean {
-    return this.drag !== null;
+    return this.drag !== null || this.xdrag !== null;
   }
 
-  /** The active floating session for the active cel, lifting pixels if needed. */
   private session(): MoveSession | null {
-    const e = this.editor;
-    const cel = e.doc.activeCel;
-    if (e.floating && e.floating.surface === cel) return e.floating;
-    e.commitFloating();
-    if (!e.canEditPixels()) return null;
-    const s = MoveSession.lift(e.doc, cel);
-    if (!s) {
-      e.toast('Nothing to move on this layer');
-      return null;
-    }
-    e.floating = s;
-    return s;
+    return this.editor.liftFloating();
+  }
+
+  /** Screen positions of the box corners and handles of the floating pixels. */
+  private handles(view: Viewport): {
+    box: { x: number; y: number }[];
+    scale: { h: Handle; x: number; y: number }[];
+    rotate: { x: number; y: number };
+    topMid: { x: number; y: number };
+  } | null {
+    const f = this.editor.floating;
+    if (!f || f.surface !== this.editor.doc.activeCel) return null;
+    const box = f.corners().map((c) => view.docToScreen(c.x, c.y));
+    const mid = (a: { x: number; y: number }, b: { x: number; y: number }) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    const [tl, tr, br, bl] = box;
+    const scale: { h: Handle; x: number; y: number }[] = [
+      { h: { kind: 'scale', hx: -1, hy: -1 }, ...tl },
+      { h: { kind: 'scale', hx: 1, hy: -1 }, ...tr },
+      { h: { kind: 'scale', hx: 1, hy: 1 }, ...br },
+      { h: { kind: 'scale', hx: -1, hy: 1 }, ...bl },
+      { h: { kind: 'scale', hx: 0, hy: -1 }, ...mid(tl, tr) },
+      { h: { kind: 'scale', hx: 1, hy: 0 }, ...mid(tr, br) },
+      { h: { kind: 'scale', hx: 0, hy: 1 }, ...mid(br, bl) },
+      { h: { kind: 'scale', hx: -1, hy: 0 }, ...mid(bl, tl) },
+    ];
+    const topMid = mid(tl, tr);
+    const c = mid(tl, br);
+    const dx = topMid.x - c.x;
+    const dy = topMid.y - c.y;
+    const len = Math.hypot(dx, dy) || 1;
+    // When flipped vertically the "top" edge is at the bottom; the handle stays outside the box.
+    const rotate = { x: topMid.x + (dx / len) * 28, y: topMid.y + (dy / len) * 28 };
+    return { box, scale, rotate, topMid };
   }
 
   override down(p: ToolPointer): void {
+    const e = this.editor;
+    const hs = this.handles(e.view);
+    const f = e.floating;
+    if (hs && f) {
+      const r = handleRadius(p);
+      let handle: Handle | null = null;
+      if (Math.hypot(p.sx - hs.rotate.x, p.sy - hs.rotate.y) <= r) handle = { kind: 'rotate' };
+      else {
+        // Small boxes: corners win over edge handles.
+        for (const s of hs.scale) {
+          if (Math.hypot(p.sx - s.x, p.sy - s.y) <= r) {
+            handle = s.h;
+            break;
+          }
+        }
+      }
+      if (handle) {
+        const { w, h } = f.size;
+        const { sx, sy, angle } = f.xf;
+        const c = f.center;
+        const hx = handle.kind === 'scale' ? handle.hx : 0;
+        const hy = handle.kind === 'scale' ? handle.hy : 0;
+        // Opposite side in local (unrotated, scaled) coordinates → document.
+        const ax = (-hx * w * Math.abs(sx)) / 2;
+        const ay = (-hy * h * Math.abs(sy)) / 2;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        this.xdrag = {
+          handle,
+          sx0: sx,
+          sy0: sy,
+          angle0: angle,
+          anchor: { x: c.x + cos * ax - sin * ay, y: c.y + sin * ax + cos * ay },
+          start: { x: p.x, y: p.y },
+          center0: c,
+          dx0: f.dx,
+          dy0: f.dy,
+        };
+        return;
+      }
+    }
     const s = this.session();
     if (!s) return;
     this.drag = { x: p.x, y: p.y, dx0: s.dx, dy0: s.dy };
   }
 
   override move(p: ToolPointer): void {
+    this.hoverPoint = p;
+    const f = this.editor.floating;
+    const x = this.xdrag;
+    if (x && f) {
+      if (x.handle.kind === 'rotate') {
+        const a0 = Math.atan2(x.start.y - x.center0.y, x.start.x - x.center0.x);
+        const a1 = Math.atan2(p.y - x.center0.y, p.x - x.center0.x);
+        let angle = x.angle0 + a1 - a0;
+        if (p.shift) angle = Math.round(angle / (Math.PI / 12)) * (Math.PI / 12);
+        angle = Math.atan2(Math.sin(angle), Math.cos(angle));
+        if (Math.abs(angle) < 1e-9) angle = 0;
+        f.setTransform({ angle });
+      } else {
+        const { hx, hy } = x.handle;
+        const { w, h } = f.size;
+        const cos = Math.cos(x.angle0);
+        const sin = Math.sin(x.angle0);
+        // Pointer relative to the anchor, in the box's own (unrotated) axes.
+        const vx = cos * (p.x - x.anchor.x) + sin * (p.y - x.anchor.y);
+        const vy = -sin * (p.x - x.anchor.x) + cos * (p.y - x.anchor.y);
+        let sx = hx ? (Math.sign(x.sx0) * hx * vx) / w : x.sx0;
+        let sy = hy ? (Math.sign(x.sy0) * hy * vy) / h : x.sy0;
+        if (p.shift && hx && hy) {
+          const k = ((hx * vx) / (w * Math.abs(x.sx0)) + (hy * vy) / (h * Math.abs(x.sy0))) / 2;
+          sx = x.sx0 * k;
+          sy = x.sy0 * k;
+        }
+        // Never collapse to zero size.
+        const minX = 1 / w;
+        const minY = 1 / h;
+        if (Math.abs(sx) < minX) sx = (Math.sign(sx) || 1) * minX;
+        if (Math.abs(sy) < minY) sy = (Math.sign(sy) || 1) * minY;
+        // New center: half the new size away from the anchor along each dragged axis.
+        const lx = hx ? (hx * w * Math.abs(sx)) / 2 : 0;
+        const ly = hy ? (hy * h * Math.abs(sy)) / 2 : 0;
+        let cx: number;
+        let cy: number;
+        if (hx && hy) {
+          cx = x.anchor.x + cos * lx - sin * ly;
+          cy = x.anchor.y + sin * lx + cos * ly;
+        } else if (hx) {
+          cx = x.anchor.x + cos * lx;
+          cy = x.anchor.y + sin * lx;
+        } else {
+          cx = x.anchor.x - sin * ly;
+          cy = x.anchor.y + cos * ly;
+        }
+        f.setTransform({ sx, sy }, x.dx0 + cx - x.center0.x, x.dy0 + cy - x.center0.y);
+      }
+      this.hint(f);
+      return;
+    }
     const d = this.drag;
-    const s = this.editor.floating;
-    if (!d || !s) return;
+    if (!d || !f) return;
     let dx = Math.round(p.x - d.x);
     let dy = Math.round(p.y - d.y);
     const g = this.editor.gridSnap();
@@ -413,18 +549,30 @@ export class MoveTool extends Tool {
       dx = Math.round(dx / g.w) * g.w;
       dy = Math.round(dy / g.h) * g.h;
     }
-    s.moveTo(d.dx0 + dx, d.dy0 + dy);
-    this.editor.setStatusHint(`Δ ${s.dx}, ${s.dy}`);
+    f.moveTo(d.dx0 + dx, d.dy0 + dy);
+    this.editor.setStatusHint(`Δ ${Math.round(f.dx)}, ${Math.round(f.dy)}`);
+  }
+
+  private hint(f: MoveSession): void {
+    const { w, h } = f.size;
+    const deg = Math.round((f.xf.angle * 180) / Math.PI);
+    this.editor.setStatusHint(`${Math.round(w * Math.abs(f.xf.sx))} × ${Math.round(h * Math.abs(f.xf.sy))} px · ${deg}° · Enter applies, Esc cancels`);
   }
 
   override up(): void {
     this.drag = null;
+    this.xdrag = null;
+    this.editor.renderer.requestRender();
   }
 
   override cancel(): void {
     const d = this.drag;
-    if (d && this.editor.floating) this.editor.floating.moveTo(d.dx0, d.dy0);
+    const f = this.editor.floating;
+    if (d && f) f.moveTo(d.dx0, d.dy0);
+    const x = this.xdrag;
+    if (x && f) f.setTransform({ sx: x.sx0, sy: x.sy0, angle: x.angle0 }, x.dx0, x.dy0);
     this.drag = null;
+    this.xdrag = null;
   }
 
   override keyDown(e: KeyboardEvent): boolean {
@@ -435,7 +583,7 @@ export class MoveTool extends Tool {
     const s = this.session();
     if (s) {
       s.moveTo(s.dx + d[0], s.dy + d[1]);
-      this.editor.setStatusHint(`Δ ${s.dx}, ${s.dy}`);
+      this.editor.setStatusHint(`Δ ${Math.round(s.dx)}, ${Math.round(s.dy)}`);
     }
     return true;
   }
@@ -443,6 +591,38 @@ export class MoveTool extends Tool {
   override deactivate(): void {
     super.deactivate();
     this.editor.commitFloating();
+  }
+
+  protected override hasCursorOverlay(): boolean {
+    return true;
+  }
+
+  override drawOverlay(ctx: CanvasRenderingContext2D, view: Viewport): void {
+    const hs = this.handles(view);
+    if (!hs) return;
+    ctx.beginPath();
+    hs.box.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+    ctx.closePath();
+    ctx.moveTo(hs.topMid.x, hs.topMid.y);
+    ctx.lineTo(hs.rotate.x, hs.rotate.y);
+    strokeTwoTone(ctx);
+    const touch = this.hoverPoint?.pointerType === 'touch';
+    const size = touch ? 12 : 8;
+    for (const s of hs.scale) {
+      ctx.beginPath();
+      ctx.rect(s.x - size / 2, s.y - size / 2, size, size);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#1b1d21';
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(hs.rotate.x, hs.rotate.y, size / 2 + 1, 0, Math.PI * 2);
+    ctx.fillStyle = '#5aa9ff';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
   }
 }
 

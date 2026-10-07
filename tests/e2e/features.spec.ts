@@ -506,3 +506,76 @@ test('linked frames and tags: timeline, playback order and export by tag', async
   await page.keyboard.press('Control+z');
   await expect(tl.locator('.tl-tag.start')).toHaveText('walk');
 });
+
+test('free transform: scale and rotate with handles, apply and undo', async ({ page }) => {
+  await newImage(page, 24, 24);
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    const d = e.doc.activeCel.ensureData();
+    for (let y = 8; y < 12; y++) for (let x = 8; x < 12; x++) d.set([255, 0, 0, 255], (y * 24 + x) * 4);
+    e.doc.activeCel.touch({ x: 0, y: 0, w: 24, h: 24 });
+    e.doc.notifyPixels(e.doc.activeCel, { x: 0, y: 0, w: 24, h: 24 });
+    const m = new Uint8Array(576);
+    for (let y = 8; y < 12; y++) m.fill(255, y * 24 + 8, y * 24 + 12);
+    e.applySelection(m, { x: 8, y: 8, w: 4, h: 4 }, 'replace', 'Select');
+  });
+  await page.keyboard.press('Shift+t');
+  expect(await page.evaluate(() => (window as any).art.editor.tool.id)).toBe('move');
+  const screen = (x: number, y: number) => page.evaluate(([dx, dy]) => (window as any).art.editor.view.docToScreen(dx, dy), [x, y]);
+  const canvasBox = (await page.locator('canvas.view').boundingBox())!;
+  const at = async (x: number, y: number) => {
+    const p = await screen(x, y);
+    return { x: canvasBox.x + p.x, y: canvasBox.y + p.y };
+  };
+  // Drag the bottom-right corner from (12,12) to (16,16) with Shift: 8×8, top-left stays.
+  let a = await at(12, 12);
+  let b = await at(16, 16);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.keyboard.down('Shift');
+  await page.mouse.move(b.x, b.y, { steps: 6 });
+  await page.keyboard.up('Shift');
+  await page.mouse.up();
+  await expect(page.locator('.opt-hint')).toContainText('8 × 8 px');
+  expect(await page.evaluate(() => (window as any).art.editor.floating.rect)).toEqual({ x: 8, y: 8, w: 8, h: 8 });
+  expect(await layerPixel(page, 15, 15)).toEqual([255, 0, 0, 255]);
+  // Rotate 45° with the rotation handle (Shift snaps to 15° steps).
+  const handle = await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    const [tl, tr] = e.floating.corners();
+    const c = e.floating.center;
+    return { top: e.view.docToScreen((tl.x + tr.x) / 2, (tl.y + tr.y) / 2), c: e.view.docToScreen(c.x, c.y) };
+  });
+  const len = Math.hypot(handle.top.x - handle.c.x, handle.top.y - handle.c.y);
+  a = { x: canvasBox.x + handle.top.x, y: canvasBox.y + handle.top.y - 28 };
+  const r = len + 28;
+  b = { x: canvasBox.x + handle.c.x + r * Math.sin(Math.PI / 4), y: canvasBox.y + handle.c.y - r * Math.cos(Math.PI / 4) };
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.keyboard.down('Shift');
+  await page.mouse.move(b.x, b.y, { steps: 8 });
+  await page.keyboard.up('Shift');
+  await page.mouse.up();
+  await expect(page.locator('.opt-hint')).toContainText('45°');
+  // A diamond: center filled, the old box corner empty.
+  expect(await layerPixel(page, 12, 12)).toEqual([255, 0, 0, 255]);
+  expect(await layerPixel(page, 8, 8)).toEqual([0, 0, 0, 0]);
+  // Top vertex at y ≈ 6.3: pixel row 7 is inside, row 5 outside.
+  expect(await layerPixel(page, 12, 7)).toEqual([255, 0, 0, 255]);
+  expect(await layerPixel(page, 12, 5)).toEqual([0, 0, 0, 0]);
+  // Flip and reset from the options bar, then apply with Enter: one undo step.
+  // Reset keeps the new center (12,12): a 4×4 square at 10..13.
+  await page.locator('.optionsbar').getByTitle('Undo scaling and rotation').click();
+  expect(await layerPixel(page, 10, 10)).toEqual([255, 0, 0, 255]);
+  expect(await layerPixel(page, 13, 13)).toEqual([255, 0, 0, 255]);
+  expect(await layerPixel(page, 9, 9)).toEqual([0, 0, 0, 0]);
+  expect(await layerPixel(page, 14, 14)).toEqual([0, 0, 0, 0]);
+  await page.locator('.optionsbar').getByTitle('Rotate 90° clockwise').click();
+  await page.keyboard.press('Enter');
+  expect(await page.evaluate(() => (window as any).art.editor.floating)).toBeNull();
+  const count = await page.evaluate(() => (window as any).art.editor.history.undoCount);
+  await page.keyboard.press('Control+z');
+  expect(await page.evaluate(() => (window as any).art.editor.history.undoCount)).toBe(count - 1);
+  expect(await layerPixel(page, 11, 11)).toEqual([255, 0, 0, 255]);
+  expect(await layerPixel(page, 12, 12)).toEqual([0, 0, 0, 0]);
+});

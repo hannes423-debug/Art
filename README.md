@@ -43,6 +43,7 @@ fast and canvas-first.
 - Rectangle, ellipse and lasso selection; magic wand. Replace/add/subtract/intersect (Shift/Alt)
 - Select by color, feather selection, grow, shrink and border selections (round or square, any radius); Ctrl+Alt+= / Ctrl+Alt+- grow or shrink by 1px. Select layer content → 1px outside border → fill outlines a sprite
 - Move tool with floating selections: drag or nudge with arrow keys without destroying what is underneath, then apply or cancel
+- Free transform (Shift+T): scale with 8 handles (Shift keeps proportions), rotate with the round handle (Shift snaps to 15°), flip, rotate 90°, crisp nearest-neighbour or smooth resampling
 - Cut, copy, copy merged, paste (as a floating selection or a new layer), including images from the system clipboard
 - Crop to selection, trim transparent edges, canvas size with anchor, scale image (nearest neighbour or smooth), flip and rotate
 

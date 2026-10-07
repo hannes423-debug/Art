@@ -16,11 +16,21 @@ import { SelectionCommand } from '../ops';
  * dragging across other artwork and back never loses pixels. Anchoring
  * produces a single undo step (pixels + moved selection).
  */
+/** Scale (negative = flipped) and rotation (radians) around the floating pixels' center. */
+export interface FloatTransform {
+  sx: number;
+  sy: number;
+  angle: number;
+  /** Bilinear resampling instead of nearest neighbour (crisp pixel art). */
+  smooth: boolean;
+}
+
 export class MoveSession {
   readonly surface: Surface;
   readonly doc: ArtDocument;
   dx = 0;
   dy = 0;
+  xf: FloatTransform = { sx: 1, sy: 1, angle: 0, smooth: false };
   private readonly recorder: TileRecorder;
   /** Area the pixels were lifted from; mask is null when the whole rect was lifted. */
   private readonly hole: { rect: Rect; mask: Uint8Array | null } | null;
@@ -91,10 +101,123 @@ export class MoveSession {
     this.render();
   }
 
-  /** Current floating rect in document coordinates. */
+  get transformed(): boolean {
+    const t = this.xf;
+    return t.sx !== 1 || t.sy !== 1 || t.angle !== 0;
+  }
+
+  /** Size of the untransformed floating pixels. */
+  get size(): { w: number; h: number } {
+    return { w: this.float.rect.w, h: this.float.rect.h };
+  }
+
+  /** Center of the floating pixels in document coordinates (the transform pivot). */
+  get center(): { x: number; y: number } {
+    const f = this.float.rect;
+    return { x: f.x + f.w / 2 + this.dx, y: f.y + f.h / 2 + this.dy };
+  }
+
+  /** The four corners of the (transformed) floating box: top-left, top-right, bottom-right, bottom-left. */
+  corners(): { x: number; y: number }[] {
+    const { w, h } = this.size;
+    const c = this.center;
+    const { sx, sy, angle } = this.xf;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    return [
+      [-w / 2, -h / 2],
+      [w / 2, -h / 2],
+      [w / 2, h / 2],
+      [-w / 2, h / 2],
+    ].map(([x, y]) => ({ x: c.x + cos * x * sx - sin * y * sy, y: c.y + sin * x * sx + cos * y * sy }));
+  }
+
+  /** Current floating rect in document coordinates (bounding box when transformed). */
   get rect(): Rect {
     const f = this.float.rect;
-    return { x: f.x + this.dx, y: f.y + this.dy, w: f.w, h: f.h };
+    if (!this.transformed) return { x: f.x + Math.round(this.dx), y: f.y + Math.round(this.dy), w: f.w, h: f.h };
+    const pts = this.corners();
+    const x0 = Math.floor(Math.min(...pts.map((p) => p.x)) + 1e-6);
+    const y0 = Math.floor(Math.min(...pts.map((p) => p.y)) + 1e-6);
+    const x1 = Math.ceil(Math.max(...pts.map((p) => p.x)) - 1e-6);
+    const y1 = Math.ceil(Math.max(...pts.map((p) => p.y)) - 1e-6);
+    return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
+  }
+
+  /** Sets scale/rotation (and optionally the center offset) and re-renders. */
+  setTransform(t: Partial<FloatTransform>, dx = this.dx, dy = this.dy): void {
+    this.xf = { ...this.xf, ...t };
+    this.dx = dx;
+    this.dy = dy;
+    this.render();
+  }
+
+  /**
+   * Resamples `src` (w×h, RGBA or 1-channel) through the current transform
+   * into the target rect. Each target pixel center is mapped back into the
+   * source; nearest neighbour keeps pixel art crisp.
+   */
+  private resample(src: Uint8Array | Uint8ClampedArray, channels: 1 | 4, target: Rect): Uint8ClampedArray {
+    const { w, h } = this.size;
+    const c = this.center;
+    const { sx, sy, angle, smooth } = this.xf;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const out = new Uint8ClampedArray(target.w * target.h * channels);
+    for (let ty = 0; ty < target.h; ty++) {
+      for (let tx = 0; tx < target.w; tx++) {
+        const ux = target.x + tx + 0.5 - c.x;
+        const uy = target.y + ty + 0.5 - c.y;
+        const qx = (cos * ux + sin * uy) / sx + w / 2;
+        const qy = (-sin * ux + cos * uy) / sy + h / 2;
+        const o = (ty * target.w + tx) * channels;
+        if (!smooth) {
+          const ix = Math.floor(qx);
+          const iy = Math.floor(qy);
+          if (ix < 0 || iy < 0 || ix >= w || iy >= h) continue;
+          const s = (iy * w + ix) * channels;
+          for (let k = 0; k < channels; k++) out[o + k] = src[s + k];
+          continue;
+        }
+        // Bilinear on premultiplied values (no dark fringes at transparent edges).
+        const fx = qx - 0.5;
+        const fy = qy - 0.5;
+        const x0 = Math.floor(fx);
+        const y0 = Math.floor(fy);
+        const ax = fx - x0;
+        const ay = fy - y0;
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        let a = 0;
+        for (const [px, py, wgt] of [
+          [x0, y0, (1 - ax) * (1 - ay)],
+          [x0 + 1, y0, ax * (1 - ay)],
+          [x0, y0 + 1, (1 - ax) * ay],
+          [x0 + 1, y0 + 1, ax * ay],
+        ]) {
+          if (px < 0 || py < 0 || px >= w || py >= h || wgt === 0) continue;
+          const s = (py * w + px) * channels;
+          if (channels === 1) {
+            a += src[s] * wgt;
+            continue;
+          }
+          const sa = src[s + 3] * wgt;
+          r += src[s] * sa;
+          g += src[s + 1] * sa;
+          b += src[s + 2] * sa;
+          a += sa;
+        }
+        if (channels === 1) out[o] = a;
+        else if (a > 0) {
+          out[o] = r / a;
+          out[o + 1] = g / a;
+          out[o + 2] = b / a;
+          out[o + 3] = a;
+        }
+      }
+    }
+    return out;
   }
 
   private render(): void {
@@ -120,13 +243,18 @@ export class MoveSession {
           }
         }
       }
-      blendImage(data, s.width, s.height, this.float.data, fr.w, fr.h, fr.x, fr.y);
+      const pixels = this.transformed ? this.resample(this.float.data, 4, fr) : this.float.data;
+      blendImage(data, s.width, s.height, pixels, fr.w, fr.h, fr.x, fr.y);
       s.touch(area);
       this.doc.notifyPixels(s, area);
     }
     const base = this.pastedSel ?? this.selBefore;
     if (base) {
-      this.doc.selection.setState({ bounds: { ...base.bounds, x: base.bounds.x + this.dx, y: base.bounds.y + this.dy }, data: base.data });
+      if (this.transformed) {
+        // The selection follows the transform (it is the same shape as the floating pixels).
+        const mask = this.resample(base.data, 1, fr);
+        this.doc.selection.setState({ bounds: fr, data: new Uint8Array(mask.buffer) });
+      } else this.doc.selection.setState({ bounds: { ...base.bounds, x: fr.x, y: fr.y }, data: base.data });
       this.doc.notifySelection();
     }
   }

@@ -396,6 +396,31 @@ export class Editor extends Emitter<EditorEvents> {
     this.setStatusHint('');
   }
 
+  /** The floating pixels on the active cel, lifting the selection (or layer) if needed. */
+  liftFloating(): MoveSession | null {
+    const cel = this.doc.activeCel;
+    if (this.floating && this.floating.surface === cel) return this.floating;
+    this.commitFloating();
+    if (!this.canEditPixels()) return null;
+    const s = MoveSession.lift(this.doc, cel);
+    if (!s) {
+      this.toast('Nothing to move on this layer');
+      return null;
+    }
+    this.floating = s;
+    this.emit('modified');
+    return s;
+  }
+
+  /** Free transform: float the selection with scale and rotate handles (Move tool). */
+  startTransform(): void {
+    if (this.tool.id !== 'move') this.setTool('move');
+    if (this.liftFloating()) {
+      this.setStatusHint('Drag the handles to scale or rotate · Shift keeps proportions / snaps 15° · Enter applies');
+      this.renderer.requestRender();
+    }
+  }
+
   cancelFloating(): void {
     const f = this.floating;
     if (!f) return;

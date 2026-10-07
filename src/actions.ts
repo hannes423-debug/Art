@@ -120,6 +120,7 @@ export const MENUS: MenuDef[] = [
       'edit.cut',
       'edit.copy',
       'edit.copyMerged',
+      'edit.transform',
       'edit.paste',
       'edit.pasteLayer',
       '-',
@@ -308,6 +309,7 @@ export function createActions(app: App): ActionRegistry {
     { id: 'edit.cut', label: 'Cut', keys: ['mod+x'], run: () => app.cut() },
     { id: 'edit.copy', label: 'Copy', keys: ['mod+c'], run: () => app.copy(false) },
     { id: 'edit.copyMerged', label: 'Copy merged', keys: ['mod+shift+c'], run: () => app.copy(true) },
+    { id: 'edit.transform', label: 'Transform (scale, rotate)', keys: ['shift+t'], run: () => e.startTransform() },
     { id: 'edit.paste', label: 'Paste', run: () => app.pasteFromMenu(false) },
     { id: 'edit.pasteLayer', label: 'Paste as new layer', run: () => app.pasteFromMenu(true) },
     {
