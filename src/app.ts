@@ -25,12 +25,15 @@ import {
   symmetryAxisDialog,
   tagDialog,
   textDialog,
+  timelapseDialog,
   shortcutsDialog,
 } from './ui/dialogs';
 import { h, icon, iconButton, isTyping } from './ui/dom';
-import { pickFiles } from './io/files';
+import { fileNameFor, pickFiles, saveFileAs } from './io/files';
 import { LayersPanel } from './ui/layers-panel';
 import { QuickBar } from './ui/quick-bar';
+import { TimelapseRecorder } from './timelapse';
+import { type TimelapseFormat, renderTimelapse } from './timelapse-export';
 import type { TextTool } from './tools/extra-tools';
 import { ReferenceWindow } from './ui/reference';
 import { closePopup, menuBar, mobileMenu } from './ui/menu';
@@ -65,6 +68,7 @@ export class App {
 
   private readonly stage: HTMLElement;
   private readonly quickBar: QuickBar;
+  readonly timelapse: TimelapseRecorder;
   readonly reference: ReferenceWindow;
   private readonly canvas: HTMLCanvasElement;
   private readonly toolbar: Toolbar;
@@ -114,6 +118,7 @@ export class App {
       showMapToPalette: () => this.showMapToPalette(),
     });
     this.layersPanel = new LayersPanel(e);
+    this.timelapse = new TimelapseRecorder(e);
     this.timeline = new Timeline(e);
     this.timeline.onTag = (i) => tagDialog(this, i);
     (e.tools.text as TextTool).onPlace = (x, y) => textDialog(this, x, y);
@@ -692,6 +697,29 @@ export class App {
 
   showTagDialog(index: number | null): void {
     tagDialog(this, index);
+  }
+
+  showTimelapse(): void {
+    void timelapseDialog(this);
+  }
+
+  /** Renders the recorded timelapse and saves or downloads it. */
+  async exportTimelapse(format: TimelapseFormat, seconds: number): Promise<boolean> {
+    this.setBusy(true);
+    try {
+      const pngs = await this.timelapse.frames();
+      const { blob, ext } = await renderTimelapse(pngs, format, seconds);
+      const name = fileNameFor(`${this.editor.doc.name} timelapse`, ext);
+      const res = await saveFileAs(blob, name, [{ description: 'Timelapse', accept: { [blob.type || 'application/octet-stream']: [`.${ext}`] } }]);
+      if (res.status === 'cancelled') return false;
+      this.toast(res.status === 'saved' ? `Exported ${res.handle.name}` : `Downloaded ${name}`);
+      return true;
+    } catch (err) {
+      this.toast(`Timelapse export failed: ${err instanceof Error ? err.message : String(err)}`, true);
+      return false;
+    } finally {
+      this.setBusy(false);
+    }
   }
 
   showMapToPalette(): void {

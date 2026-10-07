@@ -77,6 +77,7 @@ fast and canvas-first.
 - Projects are saved automatically in the browser and restored when you come back
 - Save portable `.artproj` project files ([open format](docs/file-format.md)); on desktop Chrome/Edge, Save writes back to the same file
 - Share exports directly to other apps on mobile
+- Timelapse: every project records small snapshots as you draw (kept in the browser with the project, across sessions); File → Export timelapse… makes an MP4/WebM video, GIF or APNG of any length
 
 **Touch, stylus & views**
 - Pen: draws with pressure; pen eraser end erases. Palm rejection while the pen is down
@@ -118,6 +119,8 @@ instead of Ctrl.
   for backups and to move work between devices. Browser storage can be
   cleared by the browser or the user.
 - **Exported images** (PNG/JPEG/WebP) via **File → Export image**.
+- **Timelapse snapshots** are kept in the browser next to each project and
+  deleted with it (turn recording off with **File → Record timelapse**).
 
 ### Install as an app
 

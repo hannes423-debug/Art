@@ -111,6 +111,9 @@ export const MENUS: MenuDef[] = [
       'file.export',
       'file.exportAnim',
       'file.reexport',
+      '-',
+      'file.timelapse',
+      'file.recordTimelapse',
     ],
   },
   {
@@ -302,6 +305,13 @@ export function createActions(app: App): ActionRegistry {
     { id: 'file.importLayer', label: 'Import image as layer…', icon: 'image', run: () => app.importAsLayer() },
     { id: 'file.importSheet', label: 'Import sprite sheet…', icon: 'film', run: () => app.importSpriteSheet() },
     { id: 'file.export', label: 'Export image…', keys: ['mod+e'], icon: 'share', run: () => app.showExport() },
+    { id: 'file.timelapse', label: 'Export timelapse…', icon: 'film', run: () => app.showTimelapse() },
+    {
+      id: 'file.recordTimelapse',
+      label: 'Record timelapse',
+      run: () => e.updateSettings({ timelapse: !e.settings.timelapse }),
+      checked: () => e.settings.timelapse,
+    },
     { id: 'file.exportAnim', label: 'Export animation (GIF/APNG)…', icon: 'film', run: () => app.showExport('animation') },
     {
       id: 'file.reexport',

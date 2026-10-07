@@ -7,6 +7,7 @@ import { canShareFile } from '../io/files';
 import type { ProjectMeta } from '../io/storage';
 import { colorMask, mapToPalette, replaceColor, resizeCanvas, scaleImage, setTags } from '../ops';
 import type { TouchMode } from '../settings';
+import { type TimelapseFormat, videoMime } from '../timelapse-export';
 import { type TextFont, type TextStyle, renderText } from '../tools/text-render';
 import { checkbox, confirmDialog, field, numberInput, openDialog, readNumber, selectInput } from './dialog';
 import { formatShortcut, h, icon } from './dom';
@@ -568,6 +569,61 @@ export function tagDialog(app: App, index: number | null): void {
         : []),
       { label: 'Cancel' },
       { label: existing ? 'Save' : 'Add tag', primary: true, onClick: save },
+    ],
+  });
+}
+
+// ----------------------------------------------------------------- Timelapse
+
+export async function timelapseDialog(app: App): Promise<void> {
+  const e = app.editor;
+  const count = await app.timelapse.count();
+  const video = videoMime();
+  const format = selectInput(
+    [
+      ...(video ? [{ value: 'video', label: `Video (${video.startsWith('video/mp4') ? 'MP4' : 'WebM'})` }] : []),
+      { value: 'gif', label: 'GIF' },
+      { value: 'apng', label: 'APNG (lossless)' },
+    ],
+    video ? 'video' : 'gif',
+  );
+  const seconds = numberInput(Math.max(3, Math.min(30, Math.round(count / 10))), 1, 600);
+  const record = checkbox('Record a timelapse of my projects', e.settings.timelapse);
+  record.input.addEventListener('change', () => e.updateSettings({ timelapse: record.input.checked }));
+  const info = h(
+    'p',
+    null,
+    count
+      ? `${count} snapshot${count === 1 ? '' : 's'} recorded for “${e.doc.name}”. A snapshot is taken after each change and kept in this browser with the project.`
+      : 'Nothing recorded for this project yet. Snapshots are taken after each change while recording is on.',
+  );
+  openDialog({
+    title: 'Timelapse',
+    content: [info, h('div', { class: 'row' }, field('Format', format), field('Length (seconds)', seconds)), record.el],
+    buttons: [
+      {
+        label: 'Clear',
+        danger: true,
+        onClick: async () => {
+          if (!count) return;
+          if (await confirmDialog('Clear timelapse', `Delete all ${count} snapshots of this project?`, 'Delete', true)) {
+            await app.timelapse.clear();
+            e.toast('Timelapse cleared');
+          }
+        },
+      },
+      { label: 'Close' },
+      {
+        label: 'Export',
+        primary: true,
+        onClick: async () => {
+          if (!count) {
+            e.toast('Nothing has been recorded yet');
+            return false;
+          }
+          return app.exportTimelapse(format.value as TimelapseFormat, readNumber(seconds, 1, 600, 10));
+        },
+      },
     ],
   });
 }

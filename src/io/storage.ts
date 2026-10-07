@@ -19,7 +19,8 @@ export interface ProjectMeta {
 }
 
 const DB_NAME = 'art';
-const DB_VERSION = 1;
+/** 2: adds the 'timelapse' store. */
+const DB_VERSION = 2;
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openDB(): Promise<IDBDatabase> {
@@ -34,6 +35,10 @@ function openDB(): Promise<IDBDatabase> {
         const db = req.result;
         if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'id' });
         if (!db.objectStoreNames.contains('data')) db.createObjectStore('data', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('timelapse')) {
+          const s = db.createObjectStore('timelapse', { autoIncrement: true });
+          s.createIndex('project', 'project');
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error ?? new Error('Could not open the project library'));
@@ -93,6 +98,48 @@ export async function deleteProject(id: string): Promise<void> {
   const tx = db.transaction(['meta', 'data'], 'readwrite');
   tx.objectStore('meta').delete(id);
   tx.objectStore('data').delete(id);
+  await done(tx);
+  await clearTimelapse(id);
+}
+
+// ------------------------------------------------------------- Timelapse
+
+/** One recorded snapshot of a project (a small PNG of the whole image). */
+export interface TimelapseFrame {
+  project: string;
+  time: number;
+  png: Blob;
+}
+
+export async function addTimelapseFrames(frames: TimelapseFrame[]): Promise<void> {
+  if (!frames.length) return;
+  const db = await openDB();
+  const tx = db.transaction('timelapse', 'readwrite');
+  const s = tx.objectStore('timelapse');
+  for (const f of frames) s.add(f);
+  await done(tx);
+}
+
+/** All frames of a project in recording order. */
+export async function getTimelapseFrames(project: string): Promise<TimelapseFrame[]> {
+  const db = await openDB();
+  const tx = db.transaction('timelapse', 'readonly');
+  const all = await request(tx.objectStore('timelapse').index('project').getAll(project) as IDBRequest<TimelapseFrame[]>);
+  return all.sort((a, b) => a.time - b.time);
+}
+
+export async function countTimelapseFrames(project: string): Promise<number> {
+  const db = await openDB();
+  const tx = db.transaction('timelapse', 'readonly');
+  return request(tx.objectStore('timelapse').index('project').count(project));
+}
+
+export async function clearTimelapse(project: string): Promise<void> {
+  const db = await openDB();
+  const tx = db.transaction('timelapse', 'readwrite');
+  const idx = tx.objectStore('timelapse').index('project');
+  const keys = await request(idx.getAllKeys(project));
+  for (const k of keys) tx.objectStore('timelapse').delete(k);
   await done(tx);
 }
 

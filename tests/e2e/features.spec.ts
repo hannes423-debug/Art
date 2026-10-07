@@ -667,3 +667,44 @@ test('layer groups in the layers panel: group, hide, collapse, merge', async ({ 
   await page.keyboard.press('Control+z');
   await expect(panel.locator('.group-row')).toHaveCount(1);
 });
+
+test('timelapse: records snapshots per project, survives reload, exports GIF and video', async ({ page }) => {
+  await newImage(page, 16, 16, 'white');
+  await selectTool(page, 'p');
+  await setFg(page, '#000000');
+  for (const x of [2, 6, 10]) {
+    await drawMouse(page, [[x, 4]]);
+    await page.waitForTimeout(1100);
+  }
+  // Snapshots are stored once the project is in the browser library (autosave).
+  await page.waitForFunction(async () => (await (window as any).art.timelapse.count()) >= 3, null, { timeout: 10_000 });
+  await page.waitForFunction(() => !!(window as any).art.editor.info.projectId);
+  await page.evaluate(() => (window as any).art.timelapse.flush());
+  await page.reload();
+  await page.waitForFunction(() => !!(window as any).art?.editor?.info?.projectId, null, { timeout: 10_000 });
+  await menu(page, 'File', 'Export timelapse…');
+  const dialog = page.locator('dialog.dialog');
+  await expect(dialog.getByText(/[3-9] snapshots recorded|\d{2,} snapshots recorded/)).toBeVisible();
+  await dialog.getByLabel('Format').selectOption('gif');
+  await dialog.getByLabel('Length (seconds)').fill('2');
+  let download = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Export' }).click();
+  const gif = readFileSync((await (await download).path())!);
+  const frames = await browserFrames(page, gif, 'image/gif');
+  expect(frames.length).toBeGreaterThanOrEqual(3);
+  // The last frame holds the finished image.
+  expect(frames.at(-1)!.duration).toBe(1500);
+  // Video (recorded in real time by the browser).
+  await menu(page, 'File', 'Export timelapse…');
+  const fmt = dialog.getByLabel('Format');
+  const hasVideo = await fmt.locator('option[value="video"]').count();
+  if (hasVideo) {
+    await fmt.selectOption('video');
+    await dialog.getByLabel('Length (seconds)').fill('1');
+    download = page.waitForEvent('download');
+    await dialog.getByRole('button', { name: 'Export' }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toMatch(/timelapse\.(webm|mp4)$/);
+    expect(readFileSync((await file.path())!).length).toBeGreaterThan(500);
+  } else await dialog.getByRole('button', { name: 'Close' }).click();
+});

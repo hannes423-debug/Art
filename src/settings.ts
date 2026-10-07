@@ -30,6 +30,8 @@ export interface Settings {
   quickShape: 'touch' | 'always' | 'off';
   /** Size/opacity sliders on the canvas edge. auto = on touch tablets. */
   quickBar: 'auto' | 'left' | 'right' | 'off';
+  /** Record a timelapse of every project (snapshots stored in the browser). */
+  timelapse: boolean;
 }
 
 export function defaultSettings(): Settings {
@@ -50,6 +52,7 @@ export function defaultSettings(): Settings {
     paletteLock: false,
     quickShape: 'touch',
     quickBar: 'auto',
+    timelapse: true,
   };
 }
 

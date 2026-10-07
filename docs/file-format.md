@@ -108,6 +108,7 @@ canvas `lighter`).
 ## In-browser storage
 
 Inside the browser, Art keeps projects in IndexedDB (database `art`, stores
-`meta` and `data`) using the same structure, except that cels are PNG `Blob`s
+`meta` and `data`; timelapse snapshots live in a separate `timelapse` store
+and are not part of the project file) using the same structure, except that cels are PNG `Blob`s
 instead of data URLs. "Save project as file" always writes the portable JSON
 format described above.

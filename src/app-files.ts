@@ -147,6 +147,7 @@ export class ProjectFiles {
       if (e.doc !== doc) return true;
       e.info.projectId = id;
       setLastProjectId(id);
+      void this.app.timelapse.flush();
       if (e.history.version === version && e.untrackedChanges === untracked) e.markSaved();
       if (!this.persistAsked) {
         this.persistAsked = true;
