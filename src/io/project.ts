@@ -1,5 +1,5 @@
 import { type RGBA, parseHex, toHex } from '../core/color';
-import { ArtDocument, type Frame, MAX_DIMENSION } from '../core/document';
+import { ArtDocument, type Frame, MAX_DIMENSION, type Tag } from '../core/document';
 import { BLEND_MODES, type BlendMode, Layer } from '../core/layer';
 import { Surface } from '../core/surface';
 import type { GridSettings } from '../render/renderer';
@@ -11,7 +11,8 @@ import { decodePNG, encodePNG } from './png';
  * data URL, in the browser library (IndexedDB) it is a Blob.
  */
 export const PROJECT_FORMAT = 'art-project';
-export const PROJECT_VERSION = 1;
+/** Newest version this build reads and writes. Files without linked cels are written as version 1. */
+export const PROJECT_VERSION = 2;
 export const PROJECT_EXT = 'artproj';
 export const PROJECT_MIME = 'application/vnd.art-project+json';
 
@@ -21,8 +22,8 @@ export interface ProjectLayer<C> {
   opacity: number;
   blendMode: BlendMode;
   alphaLocked: boolean;
-  /** One entry per frame; null = fully transparent cel. */
-  cels: (C | null)[];
+  /** One entry per frame; null = fully transparent cel; { link: i } = same cel as frame i (version 2). */
+  cels: (C | null | { link: number })[];
 }
 
 export interface ProjectData<C> {
@@ -33,6 +34,7 @@ export interface ProjectData<C> {
   width: number;
   height: number;
   frames: Frame[];
+  tags?: Tag[];
   /** Bottom-to-top. */
   layers: ProjectLayer<C>[];
   activeLayer: number;
@@ -63,9 +65,16 @@ export async function encodeCel(cel: Surface): Promise<Uint8Array | null> {
 
 export async function serializeProject<C>(doc: ArtDocument, extras: ProjectExtras, wrap: (png: Uint8Array) => C | Promise<C>): Promise<ProjectData<C>> {
   const layers: ProjectLayer<C>[] = [];
+  let linked = false;
   for (const l of doc.layers) {
-    const cels: (C | null)[] = [];
-    for (const c of l.cels) {
+    const cels: (C | null | { link: number })[] = [];
+    for (const [f, c] of l.cels.entries()) {
+      const first = l.cels.indexOf(c);
+      if (first < f) {
+        cels.push({ link: first });
+        linked = true;
+        continue;
+      }
       const png = await encodeCel(c);
       cels.push(png ? await wrap(png) : null);
     }
@@ -74,12 +83,13 @@ export async function serializeProject<C>(doc: ArtDocument, extras: ProjectExtra
   const now = new Date().toISOString();
   return {
     format: PROJECT_FORMAT,
-    version: PROJECT_VERSION,
+    version: linked ? 2 : 1,
     generator: `Art ${__APP_VERSION__}`,
     name: doc.name,
     width: doc.width,
     height: doc.height,
     frames: doc.frames.map((f) => ({ duration: f.duration })),
+    tags: doc.tags.map((t) => ({ ...t })),
     layers,
     activeLayer: doc.activeLayerIndex,
     activeFrame: doc.activeFrame,
@@ -147,6 +157,12 @@ export async function deserializeProject(input: string | ProjectData<unknown>): 
     const cels: Surface[] = [];
     for (let f = 0; f < frames.length; f++) {
       const c = pl.cels?.[f];
+      if (c && typeof c === 'object' && 'link' in c && !(c instanceof Blob) && !(c instanceof Uint8Array)) {
+        const target = Number((c as { link: unknown }).link);
+        if (!Number.isInteger(target) || target < 0 || target >= f) throw new ProjectFormatError(`Layer ${i + 1} frame ${f + 1} links to an invalid frame.`);
+        cels.push(cels[target]);
+        continue;
+      }
       if (c === null || c === undefined) {
         cels.push(new Surface(width, height));
         continue;
@@ -163,6 +179,16 @@ export async function deserializeProject(input: string | ProjectData<unknown>): 
     layers.push(layer);
   }
   const doc = ArtDocument.fromLayers(width, height, layers, frames, typeof data.name === 'string' ? data.name : 'Untitled');
+  const colorRe = /^#[0-9a-f]{6}$/i;
+  doc.tags = (Array.isArray(data.tags) ? data.tags : [])
+    .map((t) => ({
+      name: typeof t?.name === 'string' ? t.name.slice(0, 64) : 'Tag',
+      from: Math.max(0, Math.min(frames.length - 1, Number(t?.from) | 0)),
+      to: Math.max(0, Math.min(frames.length - 1, Number(t?.to) | 0)),
+      color: typeof t?.color === 'string' && colorRe.test(t.color) ? t.color : '#5aa9ff',
+      direction: (['forward', 'reverse', 'pingpong'] as const).includes(t?.direction) ? t.direction : 'forward',
+    }))
+    .filter((t) => t.to >= t.from);
   const al = layers[Math.max(0, Math.min(layers.length - 1, data.activeLayer | 0))];
   doc.setActiveLayer(al);
   doc.setActiveFrame(data.activeFrame | 0);

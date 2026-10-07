@@ -483,14 +483,35 @@ export class Editor extends Emitter<EditorEvents> {
 
   // ------------------------------------------------------------ Playback
 
+  /** Frame order for playback: the tag around the active frame (with its direction), or every frame. */
+  playbackOrder(): number[] {
+    const doc = this.doc;
+    const tag = doc.tagAt(doc.activeFrame);
+    const from = tag ? tag.from : 0;
+    const to = tag ? tag.to : doc.frames.length - 1;
+    const fwd: number[] = [];
+    for (let i = from; i <= to; i++) fwd.push(i);
+    if (!tag || tag.direction === 'forward') return fwd;
+    if (tag.direction === 'reverse') return fwd.reverse();
+    // Ping-pong: there and back without repeating the ends.
+    return [...fwd, ...fwd.slice(1, -1).reverse()];
+  }
+
   play(): void {
-    if (this.playing || this.doc.frames.length < 2) return;
+    if (this.playing) return;
+    const order = this.playbackOrder();
+    if (order.length < 2) {
+      if (this.doc.frames.length > 1) this.toast('This tag has only one frame');
+      return;
+    }
     this.commitFloating();
     this.playing = true;
-    let frame = this.doc.activeFrame;
+    let pos = Math.max(0, order.indexOf(this.doc.activeFrame));
+    let frame = order[pos];
     const tick = () => {
       if (!this.playing) return;
-      frame = (frame + 1) % this.doc.frames.length;
+      pos = (pos + 1) % order.length;
+      frame = order[pos];
       this.renderer.displayFrame = frame;
       this.renderer.invalidateAll();
       this.playTimer = window.setTimeout(tick, Math.max(16, this.doc.frames[frame].duration));

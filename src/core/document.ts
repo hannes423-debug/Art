@@ -11,6 +11,21 @@ export interface Frame {
   duration: number;
 }
 
+export type TagDirection = 'forward' | 'reverse' | 'pingpong';
+
+/** A named range of frames (an animation such as "walk" or "idle"). Indices are inclusive. */
+export interface Tag {
+  name: string;
+  from: number;
+  to: number;
+  color: string;
+  direction: TagDirection;
+}
+
+export function cloneTags(tags: Tag[]): Tag[] {
+  return tags.map((t) => ({ ...t }));
+}
+
 export interface DocEvents {
   /** Pixels of a surface changed inside rect. */
   pixels: { surface: Surface; rect: Rect };
@@ -37,6 +52,8 @@ export class ArtDocument extends Emitter<DocEvents> {
   height: number;
   layers: Layer[] = [];
   frames: Frame[] = [{ duration: 100 }];
+  /** Animation tags (frame ranges), in no particular order. */
+  tags: Tag[] = [];
   selection: Selection;
   name: string;
   private _activeLayer!: Layer;
@@ -133,6 +150,29 @@ export class ArtDocument extends Emitter<DocEvents> {
     this.emit('selection');
   }
 
+  /** True when the layer's cel at `frame` is shared with another frame (a linked cel). */
+  isLinked(layer: Layer, frame: number): boolean {
+    const c = layer.cels[frame];
+    return layer.cels.some((o, i) => i !== frame && o === c);
+  }
+
+  /** Frames whose cels include `surface` (several when the cel is linked). */
+  framesOf(surface: Surface): number[] {
+    const out: number[] = [];
+    for (const l of this.layers) l.cels.forEach((c, i) => c === surface && !out.includes(i) && out.push(i));
+    return out;
+  }
+
+  /** The first tag containing `frame`, if any. */
+  tagAt(frame: number): Tag | undefined {
+    return this.tags.find((t) => frame >= t.from && frame <= t.to);
+  }
+
+  setTags(tags: Tag[]): void {
+    this.tags = cloneTags(tags);
+    this.emit('frames');
+  }
+
   /** Finds which layer/frame a surface belongs to. */
   locate(surface: Surface): { layer: Layer; frame: number } | null {
     for (const layer of this.layers) {
@@ -192,6 +232,11 @@ export class ArtDocument extends Emitter<DocEvents> {
     const i = Math.max(0, Math.min(this.frames.length, index));
     this.frames.splice(i, 0, frame);
     this.layers.forEach((l, li) => l.cels.splice(i, 0, cels[li]));
+    // Tags after the new frame move; a tag the frame lands inside grows.
+    for (const t of this.tags) {
+      if (t.from >= i) t.from++;
+      if (t.to >= i) t.to++;
+    }
     this._activeFrame = i;
     this.emit('frames');
     this.emit('active');
@@ -202,6 +247,12 @@ export class ArtDocument extends Emitter<DocEvents> {
     const [frame] = this.frames.splice(index, 1);
     const cels = this.layers.map((l) => l.cels.splice(index, 1)[0]);
     for (const c of cels) c.releaseCanvas();
+    // Tags shrink around the removed frame; a tag left without frames is dropped.
+    this.tags = this.tags.filter((t) => {
+      if (t.from > index) t.from--;
+      if (t.to >= index) t.to--;
+      return t.to >= t.from;
+    });
     if (this._activeFrame >= this.frames.length) this._activeFrame = this.frames.length - 1;
     else if (this._activeFrame > index) this._activeFrame--;
     this.emit('frames');

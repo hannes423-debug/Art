@@ -1,11 +1,11 @@
 import type { App } from '../app';
 import { type RGBA, parseHex, toCss, toHex } from '../core/color';
-import { MAX_DIMENSION } from '../core/document';
+import { MAX_DIMENSION, type Tag } from '../core/document';
 import type { MorphShape } from '../core/morphology';
 import { type ExportFormat, isAnimatedFormat } from '../io/image';
 import { canShareFile } from '../io/files';
 import type { ProjectMeta } from '../io/storage';
-import { colorMask, mapToPalette, replaceColor, resizeCanvas, scaleImage } from '../ops';
+import { colorMask, mapToPalette, replaceColor, resizeCanvas, scaleImage, setTags } from '../ops';
 import type { TouchMode } from '../settings';
 import { checkbox, confirmDialog, field, numberInput, openDialog, readNumber, selectInput } from './dialog';
 import { formatShortcut, h, icon } from './dom';
@@ -89,6 +89,8 @@ export interface ExportSettings {
   padding: number;
   json: boolean;
   quality: number;
+  /** Tag index for sheets/animations; -1 = all frames. */
+  tag: number;
 }
 
 export function exportDialog(app: App, webp: boolean, initialContent?: ExportSettings['content']): void {
@@ -148,6 +150,14 @@ export function exportDialog(app: App, webp: boolean, initialContent?: ExportSet
   const json = checkbox('Also save frame data (.json)', s.json, 'Frame rectangles and durations, compatible with common game engines');
   const quality = h('input', { type: 'range', min: '0.5', max: '1', step: '0.01', value: String(s.quality), 'aria-label': 'Quality' });
   const info = h('p', { class: 'field-hint export-info' });
+  const tagSel = selectInput(
+    [
+      { value: '-1', label: `All frames (${frames})` },
+      ...doc.tags.map((t, i) => ({ value: String(i), label: `${t.name} (frames ${t.from + 1}–${t.to + 1})` })),
+    ],
+    String(s.tag >= 0 && s.tag < doc.tags.length ? s.tag : -1),
+  );
+  const tagField = field('Frames', tagSel);
   const sheetFields = h('div', { class: 'row' }, field('Columns', columns), field('Padding (px)', padding));
   const sheetBox = h('div', null, sheetFields, json.el);
   const qualityField = field('Quality', quality);
@@ -160,10 +170,12 @@ export function exportDialog(app: App, webp: boolean, initialContent?: ExportSet
     padding: readNumber(padding, 0, 64, 0),
     json: json.input.checked,
     quality: Number(quality.value),
+    tag: Number(tagSel.value),
   });
   const update = () => {
     const r = read();
     sheetBox.hidden = r.content !== 'sheet';
+    tagField.hidden = !doc.tags.length || (r.content !== 'sheet' && r.content !== 'animation');
     qualityField.hidden = r.format !== 'jpeg' && r.format !== 'webp';
     const [w, hgt] = app.exportSize(r);
     const notes: Record<string, string> = {
@@ -173,7 +185,7 @@ export function exportDialog(app: App, webp: boolean, initialContent?: ExportSet
     };
     info.textContent = `Output: ${w} × ${hgt} px${notes[r.format] ?? ''}`;
   };
-  for (const el of [format, scale, content, columns, padding, quality]) el.addEventListener('input', update);
+  for (const el of [format, scale, content, columns, padding, quality, tagSel]) el.addEventListener('input', update);
   update();
 
   const doExport = async (share: boolean) => {
@@ -194,6 +206,7 @@ export function exportDialog(app: App, webp: boolean, initialContent?: ExportSet
     content: [
       field('File name', name),
       field('Content', content),
+      tagField,
       sheetBox,
       h('div', { class: 'row' }, field('Format', format), field('Scale', scale)),
       qualityField,
@@ -477,6 +490,83 @@ export function selectColorDialog(app: App): void {
           e.applySelection(mask, bounds, mode.value as 'replace' | 'add' | 'subtract' | 'intersect', 'Select by color');
         },
       },
+    ],
+  });
+}
+
+// ---------------------------------------------------------------------- Tags
+
+const TAG_COLORS = ['#5aa9ff', '#ff6b6b', '#5ad17a', '#ffb547', '#c38cff', '#3fd0c9', '#ff7ac6', '#a3a9b3'];
+
+/** Creates a tag (index null) or edits/deletes an existing one. */
+export function tagDialog(app: App, index: number | null): void {
+  const e = app.editor;
+  const doc = e.doc;
+  const n = doc.frames.length;
+  const existing = index !== null ? doc.tags[index] : null;
+  const name = h('input', {
+    type: 'text',
+    class: 'input',
+    value: existing?.name ?? `Tag ${doc.tags.length + 1}`,
+    'aria-label': 'Tag name',
+    spellcheck: 'false',
+    maxlength: '64',
+  });
+  const from = numberInput((existing?.from ?? doc.activeFrame) + 1, 1, n);
+  const to = numberInput((existing?.to ?? doc.activeFrame) + 1, 1, n);
+  const direction = selectInput(
+    [
+      { value: 'forward', label: 'Forward' },
+      { value: 'reverse', label: 'Reverse' },
+      { value: 'pingpong', label: 'Ping-pong' },
+    ],
+    existing?.direction ?? 'forward',
+  );
+  const color = selectInput(
+    TAG_COLORS.map((c, i) => ({ value: c, label: ['Blue', 'Red', 'Green', 'Orange', 'Purple', 'Teal', 'Pink', 'Gray'][i] })),
+    existing?.color ?? TAG_COLORS[doc.tags.length % TAG_COLORS.length],
+  );
+  const save = (): false | void => {
+    const a = readNumber(from, 1, n, 1) - 1;
+    const b = readNumber(to, 1, n, n) - 1;
+    const tag = {
+      name: name.value.trim() || 'Tag',
+      from: Math.min(a, b),
+      to: Math.max(a, b),
+      color: color.value,
+      direction: direction.value as Tag['direction'],
+    };
+    const tags = doc.tags.map((t) => ({ ...t }));
+    if (index === null) tags.push(tag);
+    else tags[index] = tag;
+    setTags(doc, e.history, tags, index === null ? 'New tag' : 'Edit tag');
+  };
+  openDialog({
+    title: existing ? 'Edit tag' : 'New tag',
+    content: [
+      field('Name', name),
+      h('div', { class: 'row' }, field('From frame', from), field('To frame', to)),
+      h('div', { class: 'row' }, field('Direction', direction), field('Color', color)),
+      h('p', { class: 'field-hint' }, 'Playing inside a tag loops just that animation. Tags are exported in the sprite sheet frame data.'),
+    ],
+    buttons: [
+      ...(existing
+        ? [
+            {
+              label: 'Delete',
+              danger: true,
+              onClick: () =>
+                setTags(
+                  doc,
+                  e.history,
+                  doc.tags.filter((_, i) => i !== index),
+                  'Delete tag',
+                ),
+            },
+          ]
+        : []),
+      { label: 'Cancel' },
+      { label: existing ? 'Save' : 'Add tag', primary: true, onClick: save },
     ],
   });
 }

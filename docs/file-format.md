@@ -1,4 +1,4 @@
-# Art project format (`.artproj`) — version 1
+# Art project format (`.artproj`) — version 2
 
 An Art project is a single **UTF-8 JSON** file. It is meant to be easy to read
 and write from any language: there is no compression layer, no binary header,
@@ -11,12 +11,13 @@ The format is open and may be used freely by other tools.
 ```json
 {
   "format": "art-project",
-  "version": 1,
+  "version": 2,
   "generator": "Art 0.1.0",
   "name": "knight",
   "width": 24,
   "height": 24,
-  "frames": [{ "duration": 100 }, { "duration": 100 }],
+  "frames": [{ "duration": 100 }, { "duration": 100 }, { "duration": 100 }],
+  "tags": [{ "name": "walk", "from": 0, "to": 2, "color": "#5aa9ff", "direction": "pingpong" }],
   "layers": [
     {
       "name": "Shadow",
@@ -24,7 +25,7 @@ The format is open and may be used freely by other tools.
       "opacity": 1,
       "blendMode": "normal",
       "alphaLocked": false,
-      "cels": ["data:image/png;base64,iVBORw0KGgo…", null]
+      "cels": ["data:image/png;base64,iVBORw0KGgo…", null, { "link": 0 }]
     },
     {
       "name": "Knight",
@@ -32,7 +33,7 @@ The format is open and may be used freely by other tools.
       "opacity": 0.8,
       "blendMode": "multiply",
       "alphaLocked": true,
-      "cels": ["data:image/png;base64,iVBORw0KGgo…", "data:image/png;base64,iVBORw0KGgo…"]
+      "cels": ["data:image/png;base64,iVBORw0KGgo…", "data:image/png;base64,iVBORw0KGgo…", null]
     }
   ],
   "activeLayer": 1,
@@ -49,18 +50,19 @@ The format is open and may be used freely by other tools.
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `format` | string | yes | Always `"art-project"`. |
-| `version` | integer | yes | Format version. Readers must reject versions newer than they understand. This document describes version `1`. |
+| `version` | integer | yes | Format version. Readers must reject versions newer than they understand. This document describes version `2`. Art writes `1` when no cel is linked (the file is then also valid version 1). |
 | `generator` | string | no | Application that wrote the file. Informational only. |
 | `name` | string | no | Document name. |
 | `width`, `height` | integer | yes | Canvas size in pixels, `1`–`8192`. |
 | `frames` | array | no | One entry per animation frame, in order. Each is `{ "duration": ms }` (display time in milliseconds, minimum 10). Defaults to a single 100 ms frame. |
+| `tags` | array | no | Animation tags: `{ "name", "from", "to", "color", "direction" }`. `from`/`to` are inclusive frame indices; `color` is `#rrggbb`; `direction` is `"forward"`, `"reverse"` or `"pingpong"`. Tags may overlap. |
 | `layers` | array | yes | Layers **from bottom to top**. At least one. |
 | `layers[].name` | string | no | Layer name. |
 | `layers[].visible` | boolean | no | Default `true`. Hidden layers are not part of exports. |
 | `layers[].opacity` | number | no | `0`–`1`, default `1`. |
 | `layers[].blendMode` | string | no | `"normal"`, `"multiply"`, `"screen"` or `"add"`. Unknown values are read as `"normal"`. |
 | `layers[].alphaLocked` | boolean | no | Editor setting: painting keeps existing transparency. |
-| `layers[].cels` | array | yes | One entry per frame (same length as `frames`). Each entry is a PNG image as a `data:image/png;base64,` URL, or `null` for a fully transparent cel. |
+| `layers[].cels` | array | yes | One entry per frame (same length as `frames`). Each entry is a PNG image as a `data:image/png;base64,` URL, `null` for a fully transparent cel, or (version 2) `{ "link": i }`: a *linked cel* that shares its pixels with frame `i` of the same layer, where `i` is smaller than the entry's own frame index and refers to an entry that is not itself a link. |
 | `activeLayer` | integer | no | Index into `layers` of the layer selected when saved. |
 | `activeFrame` | integer | no | Index into `frames` of the frame selected when saved. |
 | `palette` | array | no | Palette colors as `#rrggbb` or `#rrggbbaa` strings. |
@@ -84,6 +86,12 @@ top onto a transparent background, each with its `opacity` and `blendMode`,
 following the W3C *Compositing and Blending Level 1* formulas (source-over for
 `normal`; separable `multiply`/`screen`; `add` is Porter-Duff *plus*, i.e.
 canvas `lighter`).
+
+## Version history
+
+- **2** — linked cels (`{ "link": i }` entries). Also added in this release,
+  without a version change because older readers can ignore them: `tags`.
+- **1** — initial format.
 
 ## Compatibility rules
 

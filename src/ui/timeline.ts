@@ -19,6 +19,9 @@ export class Timeline {
   private fps = h('input', { type: 'number', class: 'input tl-fps', min: '1', max: '60', 'aria-label': 'Frames per second', inputmode: 'numeric' });
   private unsub: (() => void)[] = [];
   private thumbTimer = 0;
+  private pendingThumbs = new Set<number>();
+  /** Opens the tag dialog (null = new tag). */
+  onTag: (index: number | null) => void = () => {};
 
   constructor(editor: Editor) {
     this.editor = editor;
@@ -27,7 +30,14 @@ export class Timeline {
     const prev = iconButton('skip-back', 'Previous frame (,)', () => this.go(-1), 'tl-optional');
     const next = iconButton('skip-forward', 'Next frame (.)', () => this.go(1), 'tl-optional');
     const add = iconButton('plus', 'New empty frame (Alt+N)', () => addFrame(editor.doc, editor.history, false));
-    const dup = iconButton('duplicate', 'Duplicate frame', () => addFrame(editor.doc, editor.history, true));
+    const dup = iconButton('duplicate', 'Duplicate frame (Alt+D)', () => addFrame(editor.doc, editor.history, true));
+    const linked = iconButton(
+      'link',
+      'New linked frame: shares the pixels of this frame (Alt+L)',
+      () => addFrame(editor.doc, editor.history, 'linked'),
+      'tl-optional',
+    );
+    const tag = iconButton('tag', 'New tag for this frame…', () => this.onTag(null), 'tl-optional');
     const del = iconButton('trash', 'Delete frame', () => {
       if (!deleteFrame(editor.doc, editor.history)) editor.toast('A document needs at least one frame');
     });
@@ -45,6 +55,8 @@ export class Timeline {
         { class: 'tl-controls' },
         add,
         dup,
+        linked,
+        tag,
         left,
         right,
         del,
@@ -71,12 +83,18 @@ export class Timeline {
       doc.on('active', () => this.render()),
       doc.on('layers', () => this.render()),
       doc.on('resize', () => this.render()),
-      doc.on('pixels', () => {
-        if (this.thumbTimer || this.el.offsetParent === null) return;
+      doc.on('pixels', ({ surface }) => {
+        if (this.el.offsetParent === null) return;
+        // A linked cel changes every frame it appears in.
+        for (const f of doc.framesOf(surface)) this.pendingThumbs.add(f);
+        if (this.thumbTimer) return;
         this.thumbTimer = window.setTimeout(() => {
           this.thumbTimer = 0;
-          const c = this.frames.querySelector<HTMLCanvasElement>(`[data-frame="${doc.activeFrame}"] canvas`);
-          if (c) this.drawThumb(c, doc.activeFrame);
+          for (const f of this.pendingThumbs) {
+            const c = this.frames.querySelector<HTMLCanvasElement>(`[data-frame="${f}"] canvas`);
+            if (c) this.drawThumb(c, f);
+          }
+          this.pendingThumbs.clear();
         }, 300);
       }),
     ];
@@ -120,21 +138,45 @@ export class Timeline {
   render(): void {
     const doc = this.editor.doc;
     this.fps.value = String(Math.round(1000 / (doc.frames[0]?.duration || 125)));
+    const layer = doc.activeLayer;
     const items = doc.frames.map((_, i) => {
       const c = h('canvas', { 'aria-hidden': 'true' });
       this.drawThumb(c, i);
+      const tagIndex = doc.tags.findIndex((t) => i >= t.from && i <= t.to);
+      const tag = tagIndex >= 0 ? doc.tags[tagIndex] : null;
+      // The active layer's cel is shared with the previous frame.
+      const linked = i > 0 && layer.cels[i] === layer.cels[i - 1];
+      const band = tag
+        ? h(
+            'span',
+            {
+              class: `tl-tag ${tag.from === i ? 'start' : ''} ${tag.to === i ? 'end' : ''}`.trim(),
+              title: `Tag “${tag.name}” (frames ${tag.from + 1}–${tag.to + 1}) — click to edit`,
+            },
+            tag.from === i ? tag.name : '',
+          )
+        : null;
+      if (band) {
+        band.style.background = tag!.color;
+        band.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          this.onTag(tagIndex);
+        });
+      }
       const b = h(
         'button',
         {
           type: 'button',
-          class: `tl-frame ${i === doc.activeFrame ? 'active' : ''}`.trim(),
+          class: `tl-frame ${i === doc.activeFrame ? 'active' : ''} ${linked ? 'linked' : ''}`.trim(),
           role: 'option',
           'aria-selected': String(i === doc.activeFrame),
-          title: `Frame ${i + 1}`,
+          title: `Frame ${i + 1}${linked ? ' · linked to the previous frame on this layer' : ''}`,
           dataset: { frame: String(i) },
         },
+        band,
         c,
         h('span', { class: 'tl-num' }, String(i + 1)),
+        linked ? h('span', { class: 'tl-link', 'aria-hidden': 'true' }, icon('link', 12)) : null,
       );
       b.addEventListener('click', () => {
         this.editor.stop();

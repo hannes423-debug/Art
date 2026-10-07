@@ -1453,6 +1453,58 @@ button:disabled {
     0 0 2px #000;
 }
 
+.tl-frames:has(.tl-tag) {
+  padding-top: 18px;
+}
+
+/* Tag band above the frames it covers; the name sits on the first frame. */
+.tl-tag {
+  position: absolute;
+  top: -17px;
+  left: -2px;
+  right: -6px;
+  height: 13px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 13px;
+  color: #10131a;
+  white-space: nowrap;
+  text-align: left;
+  overflow: visible;
+  cursor: pointer;
+}
+
+.tl-tag.start {
+  z-index: 1;
+  border-top-left-radius: 4px;
+  border-bottom-left-radius: 4px;
+}
+
+.tl-tag.end {
+  right: -2px;
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+.tl-link {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+
+.tl-link .icon {
+  width: 11px;
+  height: 11px;
+}
+
 .tl-fps-label {
   display: inline-flex;
   align-items: center;

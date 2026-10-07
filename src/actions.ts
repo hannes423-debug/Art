@@ -11,12 +11,14 @@ import {
   flattenImage,
   flipImage,
   flipLayer,
+  linkWithPrevious,
   mergeDown,
   moveLayer,
   rotateImage,
   selectionFromAlpha,
   setLayerProps,
   trimImage,
+  unlinkCel,
 } from './ops';
 import type { ToolId } from './tools/tool';
 import { promptDialog } from './ui/dialog';
@@ -195,7 +197,13 @@ export const MENUS: MenuDef[] = [
     items: [
       'frame.new',
       'frame.duplicate',
+      'frame.linked',
       'frame.delete',
+      '-',
+      'frame.link',
+      'frame.unlink',
+      'frame.tag',
+      'frame.editTag',
       '-',
       'frame.prev',
       'frame.next',
@@ -418,6 +426,29 @@ export function createActions(app: App): ActionRegistry {
     // Frames
     { id: 'frame.new', label: 'New frame', keys: ['alt+n'], run: () => addFrame(doc(), hist(), false) },
     { id: 'frame.duplicate', label: 'Duplicate frame', keys: ['alt+d'], run: () => addFrame(doc(), hist(), true) },
+    { id: 'frame.linked', label: 'New linked frame', keys: ['alt+l'], run: () => addFrame(doc(), hist(), 'linked') },
+    {
+      id: 'frame.link',
+      label: 'Link cel with previous frame',
+      run: () => {
+        const err = linkWithPrevious(doc(), hist());
+        if (err) e.toast(err);
+      },
+      enabled: () => doc().activeFrame > 0,
+    },
+    {
+      id: 'frame.unlink',
+      label: 'Unlink cel',
+      run: () => unlinkCel(doc(), hist()),
+      enabled: () => doc().isLinked(doc().activeLayer, doc().activeFrame),
+    },
+    { id: 'frame.tag', label: 'New tag…', run: () => app.showTagDialog(null) },
+    {
+      id: 'frame.editTag',
+      label: 'Edit tag of this frame…',
+      run: () => app.showTagDialog(doc().tags.indexOf(doc().tagAt(doc().activeFrame)!)),
+      enabled: () => !!doc().tagAt(doc().activeFrame),
+    },
     { id: 'frame.delete', label: 'Delete frame', run: () => deleteFrame(doc(), hist()), enabled: multiFrame },
     { id: 'frame.prev', label: 'Previous frame', keys: [','], run: () => app.stepFrame(-1), enabled: multiFrame },
     { id: 'frame.next', label: 'Next frame', keys: ['.'], run: () => app.stepFrame(1), enabled: multiFrame },

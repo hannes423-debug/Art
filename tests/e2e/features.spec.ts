@@ -455,3 +455,54 @@ test('reference image window: open, pan, zoom and pick colors from it', async ({
   await drawMouse(page, [[1, 1]]);
   expect(await layerPixel(page, 1, 1)).toEqual([20, 180, 90, 255]);
 });
+
+test('linked frames and tags: timeline, playback order and export by tag', async ({ page }) => {
+  await threeFrames(page);
+  await page.evaluate(() => (window as any).art.editor.updateSettings({ showTimeline: true }));
+  const tl = page.locator('.timeline');
+  // Frame 3 → new linked frame (4) that shares frame 3's pixels.
+  await tl.locator('[data-frame="2"]').click();
+  await page.keyboard.press('Alt+l');
+  await expect(tl.locator('.tl-frame')).toHaveCount(4);
+  await expect(tl.locator('[data-frame="3"]')).toHaveClass(/linked/);
+  await selectTool(page, 'p');
+  await setFg(page, '#00ff00');
+  await drawMouse(page, [[0, 0]]);
+  const shared = await page.evaluate(() => {
+    const l = (window as any).art.editor.doc.layers[0];
+    return [l.cels[2].getPixel(0, 0), l.cels[3].getPixel(0, 0)];
+  });
+  expect(shared).toEqual([
+    [0, 255, 0, 255],
+    [0, 255, 0, 255],
+  ]);
+  // Tag frames 2–3 as "walk" (ping-pong) from the Frame menu.
+  await tl.locator('[data-frame="1"]').click();
+  await menu(page, 'Frame', 'New tag…');
+  const dialog = page.locator('dialog.dialog');
+  await dialog.getByLabel('Tag name').fill('walk');
+  await dialog.getByLabel('From frame').fill('2');
+  await dialog.getByLabel('To frame').fill('3');
+  await dialog.getByLabel('Direction').selectOption('pingpong');
+  await dialog.getByRole('button', { name: 'Add tag' }).click();
+  await expect(tl.locator('.tl-tag.start')).toHaveText('walk');
+  expect(await page.evaluate(() => (window as any).art.editor.playbackOrder())).toEqual([1, 2]);
+  await tl.locator('[data-frame="3"]').click();
+  expect(await page.evaluate(() => (window as any).art.editor.playbackOrder())).toEqual([0, 1, 2, 3]);
+  // Export only the tag.
+  await menu(page, 'File', 'Export animation (GIF/APNG)…');
+  await dialog.getByRole('combobox', { name: 'Frames', exact: true }).selectOption({ label: 'walk (frames 2–3)' });
+  await dialog.getByLabel('Format').selectOption({ label: 'GIF (plays everywhere)' });
+  const download = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Export', exact: true }).click();
+  const bytes = readFileSync((await (await download).path())!);
+  const frames = await browserFrames(page, bytes, 'image/gif');
+  expect(frames.map((f) => f.red)).toEqual([[7], [8]]);
+  // Editing the tag from its band; delete it.
+  await tl.locator('.tl-tag.start').click();
+  await expect(dialog.getByRole('heading', { name: 'Edit tag' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Delete' }).click();
+  await expect(tl.locator('.tl-tag')).toHaveCount(0);
+  await page.keyboard.press('Control+z');
+  await expect(tl.locator('.tl-tag.start')).toHaveText('walk');
+});

@@ -23,6 +23,7 @@ import {
   selectColorDialog,
   settingsDialog,
   symmetryAxisDialog,
+  tagDialog,
   shortcutsDialog,
 } from './ui/dialogs';
 import { h, icon, iconButton, isTyping } from './ui/dom';
@@ -58,7 +59,7 @@ export class App {
   layout: Layout = 'desktop';
   canvasOnly = false;
   lastNewSize: { w: number; h: number; bg: NewBackground } = { w: 64, h: 64, bg: 'transparent' };
-  exportSettings: ExportSettings = { format: 'png', scale: 1, content: 'image', columns: 0, padding: 0, json: true, quality: 0.92 };
+  exportSettings: ExportSettings = { format: 'png', scale: 1, content: 'image', columns: 0, padding: 0, json: true, quality: 0.92, tag: -1 };
 
   private readonly stage: HTMLElement;
   private readonly quickBar: QuickBar;
@@ -112,6 +113,7 @@ export class App {
     });
     this.layersPanel = new LayersPanel(e);
     this.timeline = new Timeline(e);
+    this.timeline.onTag = (i) => tagDialog(this, i);
     this.statusbar = new StatusBar(e);
     this.toolbar.onColorClick = () => {
       if (this.layout === 'mobile') this.openDrawer('colors');
@@ -683,6 +685,10 @@ export class App {
     } catch (err) {
       this.toast(`Could not open ${files[0].file.name}: ${err instanceof Error ? err.message : String(err)}`, true);
     }
+  }
+
+  showTagDialog(index: number | null): void {
+    tagDialog(this, index);
   }
 
   showMapToPalette(): void {

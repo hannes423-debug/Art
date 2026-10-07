@@ -237,7 +237,9 @@ export class ProjectFiles {
       layers: await Promise.all(
         row.data.layers.map(async (l) => ({
           ...l,
-          cels: await Promise.all(l.cels.map(async (c) => (c ? 'data:image/png;base64,' + bytesToBase64(new Uint8Array(await c.arrayBuffer())) : null))),
+          cels: await Promise.all(
+            l.cels.map(async (c) => (c instanceof Blob ? 'data:image/png;base64,' + bytesToBase64(new Uint8Array(await c.arrayBuffer())) : c)),
+          ),
         })),
       ),
     };
@@ -428,6 +430,19 @@ export class ProjectFiles {
   // ---------------------------------------------------------- Exporting
 
   /** Renders the pixels to export according to the settings. */
+  /** Frames to export for sheets and animations: all, or one tag's range (with its direction). */
+  exportFrames(s: ExportSettings): number[] {
+    const doc = this.editor.doc;
+    const tag = s.tag >= 0 ? doc.tags[s.tag] : undefined;
+    const from = tag ? tag.from : 0;
+    const to = tag ? tag.to : doc.frames.length - 1;
+    const out: number[] = [];
+    for (let i = from; i <= to; i++) out.push(i);
+    if (tag?.direction === 'reverse') out.reverse();
+    else if (tag?.direction === 'pingpong' && s.content === 'animation') out.push(...out.slice(1, -1).reverse());
+    return out;
+  }
+
   renderExport(s: ExportSettings): {
     width: number;
     height: number;
@@ -444,7 +459,8 @@ export class ProjectFiles {
     if (s.content === 'layer') {
       data = doc.activeCel.data ? doc.activeCel.data.slice() : allocPixels(width, height);
     } else if (s.content === 'sheet' && doc.frames.length > 1) {
-      const n = doc.frames.length;
+      const list = this.exportFrames(s);
+      const n = list.length;
       const cols = Math.max(1, Math.min(n, s.columns || n));
       const rows = Math.ceil(n / cols);
       const pad = s.padding;
@@ -455,15 +471,15 @@ export class ProjectFiles {
       for (let i = 0; i < n; i++) {
         const fx = (i % cols) * (doc.width + pad);
         const fy = Math.floor(i / cols) * (doc.height + pad);
-        const f = compositeFrame(doc, i);
+        const f = compositeFrame(doc, list[i]);
         for (let y = 0; y < doc.height; y++) data.set(f.subarray(y * doc.width * 4, (y + 1) * doc.width * 4), ((fy + y) * width + fx) * 4);
-        frames.push({ x: fx, y: fy, w: doc.width, h: doc.height, duration: doc.frames[i].duration });
+        frames.push({ x: fx, y: fy, w: doc.width, h: doc.height, duration: doc.frames[list[i]].duration });
       }
     } else {
       data = compositeFrame(doc, doc.activeFrame);
     }
     let animation: { data: Pixels; duration: number }[] | undefined;
-    if (s.content === 'animation') animation = doc.frames.map((f, i) => ({ data: compositeFrame(doc, i), duration: f.duration }));
+    if (s.content === 'animation') animation = this.exportFrames(s).map((i) => ({ data: compositeFrame(doc, i), duration: doc.frames[i].duration }));
     if (s.scale !== 1) {
       const nw = Math.max(1, Math.round(width * s.scale));
       const nh = Math.max(1, Math.round(height * s.scale));
@@ -489,12 +505,23 @@ export class ProjectFiles {
     return encodeImage(out, isAnimatedFormat(s.format) ? 'png' : s.format, s.quality);
   }
 
+  /** Tags for the sprite sheet JSON, with frame numbers relative to the exported frames. */
+  private exportTags(s: ExportSettings): { name: string; from: number; to: number; direction: string; color: string }[] {
+    const doc = this.editor.doc;
+    const list = this.exportFrames(s);
+    const first = list.length ? Math.min(...list) : 0;
+    const last = list.length ? Math.max(...list) : 0;
+    return doc.tags
+      .filter((t) => t.to >= first && t.from <= last)
+      .map((t) => ({ name: t.name, from: Math.max(t.from, first) - first, to: Math.min(t.to, last) - first, direction: t.direction, color: t.color }));
+  }
+
   exportSize(s: ExportSettings): [number, number] {
     const doc = this.editor.doc;
     let w = doc.width;
     let h = doc.height;
     if (s.content === 'sheet' && doc.frames.length > 1) {
-      const n = doc.frames.length;
+      const n = this.exportFrames(s).length;
       const cols = Math.max(1, Math.min(n, s.columns || n));
       const rows = Math.ceil(n / cols);
       w = cols * doc.width + (cols - 1) * s.padding;
@@ -534,7 +561,16 @@ export class ProjectFiles {
             sourceSize: { w: f.w, h: f.h },
             duration: f.duration,
           })),
-          meta: { app: 'Art', version: __APP_VERSION__, image: fileName, format: 'RGBA8888', size: { w: out.width, h: out.height }, scale: String(s.scale) },
+          meta: {
+            app: 'Art',
+            version: __APP_VERSION__,
+            image: fileName,
+            format: 'RGBA8888',
+            size: { w: out.width, h: out.height },
+            scale: String(s.scale),
+            // Same shape as Aseprite's JSON, relative to the exported frames.
+            frameTags: this.exportTags(s),
+          },
         };
         const jsonBlob = new Blob([JSON.stringify(meta, null, 2)], { type: 'application/json' });
         if (hasFileSystemAccess)

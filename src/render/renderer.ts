@@ -309,10 +309,11 @@ export class Renderer {
       keep.add(doc.activeFrame - 1);
       keep.add(doc.activeFrame + 1);
     }
+    // A linked cel appears in several frames: keep it if any of them is shown.
+    const keepCels = new Set<unknown>();
+    for (const l of doc.layers) l.cels.forEach((c, i) => keep.has(i) && keepCels.add(c));
     for (const l of doc.layers) {
-      l.cels.forEach((c, i) => {
-        if (!keep.has(i) && c.hasCanvas()) c.releaseCanvas();
-      });
+      for (const c of l.cels) if (!keepCels.has(c) && c.hasCanvas()) c.releaseCanvas();
     }
     for (const k of [...this.onion.keys()]) if (!keep.has(k)) this.onion.delete(k);
   }

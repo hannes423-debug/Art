@@ -55,6 +55,8 @@ fast and canvas-first.
 - Crisp nearest-neighbour zoom, pixel grid when zoomed in, configurable tile grid, snap to grid
 - Exact pixel coordinates and selection size in the status bar
 - Frames with onion skin and animation playback (FPS)
+- Linked cels: a linked frame (Alt+L) shares pixels with the frame it came from, so a held pose or background is drawn once
+- Animation tags ("walk", "idle"…): shown above the frames, loop while playing inside them (forward, reverse or ping-pong), export one tag as GIF/APNG/sheet; sheet JSON includes Aseprite-style `frameTags`
 - Export animations as looping GIF or lossless APNG (with per-frame timing)
 - Tile preview (Alt+T): the image repeats around itself and drawing wraps across the edges, for seamless tiles and textures
 - Replace color (Shift+R) on one layer or all layers and frames, with tolerance; color → transparent works too
@@ -232,9 +234,8 @@ rules (no ads, tracking or paywalls; no dead buttons; exact pixels).
 
 ## Roadmap
 
-Next steps being considered: a layer/frame timeline with per-cel linking and
-tags, more blend modes, layer groups, text, and moving PNG encoding to a worker for very large
-images.
+Next steps being considered: more blend modes and moving PNG encoding to a
+worker for very large images.
 
 ## License
 

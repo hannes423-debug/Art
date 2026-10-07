@@ -1,6 +1,6 @@
 import type { RGBA } from './core/color';
 import { blendImage, compositeFrame } from './core/composite';
-import type { ArtDocument, Frame } from './core/document';
+import { type ArtDocument, cloneTags, type Frame, type Tag } from './core/document';
 import { type Rect, clipRect, unionRect } from './core/geometry';
 import { type Command, CompoundCommand, FnCommand, type History } from './core/history';
 import { cropPixels, flipHorizontal, flipVertical, type ResampleMode, resizePixels, rotate180, rotate90 } from './core/imageops';
@@ -508,20 +508,32 @@ export function rotateImage(doc: ArtDocument, history: History, turn: 'cw' | 'cc
 
 // ------------------------------------------------------------------ Frames
 
-export function addFrame(doc: ArtDocument, history: History, duplicate: boolean): void {
+/**
+ * Inserts a frame after the active one: empty, a copy of the active frame,
+ * or "linked" (every layer shares the active frame's cels, so editing one
+ * edits both). Adding after a tag's last frame extends the tag.
+ */
+export function addFrame(doc: ArtDocument, history: History, mode: boolean | 'empty' | 'duplicate' | 'linked'): void {
+  const kind = mode === true ? 'duplicate' : mode === false ? 'empty' : mode;
   const at = doc.activeFrame + 1;
   const prev = doc.activeFrame;
   const frame: Frame = { duration: doc.frames[prev].duration };
-  const cels = doc.layers.map((l) => (duplicate ? l.cels[prev].clone() : new Surface(doc.width, doc.height)));
+  const cels = doc.layers.map((l) => (kind === 'linked' ? l.cels[prev] : kind === 'duplicate' ? l.cels[prev].clone() : new Surface(doc.width, doc.height)));
+  const tagsBefore = cloneTags(doc.tags);
   history.execute(
     new FnCommand(
-      duplicate ? 'Duplicate frame' : 'New frame',
-      () => doc.insertFrame(at, frame, cels),
+      kind === 'linked' ? 'Linked frame' : kind === 'duplicate' ? 'Duplicate frame' : 'New frame',
+      () => {
+        doc.insertFrame(at, frame, cels);
+        for (const t of doc.tags) if (t.to === prev && tagsBefore.some((b) => b.name === t.name && b.to === prev)) t.to = at;
+        doc.emit('frames');
+      },
       () => {
         doc.removeFrame(at);
+        doc.setTags(tagsBefore);
         doc.setActiveFrame(prev);
       },
-      cels.reduce((s, c) => s + (c.data?.length ?? 0), 128),
+      kind === 'linked' ? 128 : cels.reduce((s, c) => s + (c.data?.length ?? 0), 128),
     ),
   );
 }
@@ -531,11 +543,15 @@ export function deleteFrame(doc: ArtDocument, history: History): boolean {
   const index = doc.activeFrame;
   const frame = doc.frames[index];
   const cels = doc.layers.map((l) => l.cels[index]);
+  const tagsBefore = cloneTags(doc.tags);
   history.execute(
     new FnCommand(
       'Delete frame',
       () => doc.removeFrame(index),
-      () => doc.insertFrame(index, frame, cels),
+      () => {
+        doc.insertFrame(index, frame, cels);
+        doc.setTags(tagsBefore);
+      },
       cels.reduce((s, c) => s + (c.data?.length ?? 0), 128),
     ),
   );
@@ -551,6 +567,56 @@ export function moveFrame(doc: ArtDocument, history: History, delta: number): vo
       'Move frame',
       () => doc.moveFrame(from, to),
       () => doc.moveFrame(to, from),
+    ),
+  );
+}
+
+/** Replaces one layer's cel at a frame (used to link and unlink cels). */
+function swapCel(doc: ArtDocument, history: History, label: string, layer: Layer, frame: number, next: Surface): void {
+  const before = layer.cels[frame];
+  const set = (s: Surface) => {
+    layer.cels[frame] = s;
+    doc.emit('frames');
+    doc.emit('layers');
+  };
+  history.execute(
+    new FnCommand(
+      label,
+      () => set(next),
+      () => set(before),
+      next.data?.length ?? 64,
+    ),
+  );
+}
+
+/** Makes the active layer's cel share the previous frame's cel. Returns an error message or null. */
+export function linkWithPrevious(doc: ArtDocument, history: History): string | null {
+  const f = doc.activeFrame;
+  if (f === 0) return 'The first frame has no previous frame to link to';
+  const layer = doc.activeLayer;
+  if (layer.cels[f] === layer.cels[f - 1]) return 'This cel is already linked to the previous frame';
+  swapCel(doc, history, 'Link cel', layer, f, layer.cels[f - 1]);
+  return null;
+}
+
+/** Gives the active layer's cel its own copy of the pixels. Returns false if it was not linked. */
+export function unlinkCel(doc: ArtDocument, history: History): boolean {
+  const f = doc.activeFrame;
+  const layer = doc.activeLayer;
+  if (!doc.isLinked(layer, f)) return false;
+  swapCel(doc, history, 'Unlink cel', layer, f, layer.cels[f].clone());
+  return true;
+}
+
+/** Replaces all tags as one undo step. */
+export function setTags(doc: ArtDocument, history: History, tags: Tag[], label = 'Edit tags'): void {
+  const before = cloneTags(doc.tags);
+  const after = cloneTags(tags);
+  history.execute(
+    new FnCommand(
+      label,
+      () => doc.setTags(after),
+      () => doc.setTags(before),
     ),
   );
 }
