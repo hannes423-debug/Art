@@ -59,12 +59,16 @@ export class PickerTool extends Tool {
   override down(p: ToolPointer): void {
     this.dragging = true;
     this.target = p.button === 2 ? 'bg' : 'fg';
+    this.hoverPoint = p;
     this.pick(p);
+    this.editor.renderer.requestRender();
   }
 
   override move(p: ToolPointer): void {
     this.hoverPoint = p;
-    if (this.dragging) this.pick(p);
+    if (!this.dragging) return;
+    this.pick(p);
+    this.editor.renderer.requestRender();
   }
 
   override up(): void {
@@ -96,18 +100,46 @@ export class PickerTool extends Tool {
   override drawOverlay(ctx: CanvasRenderingContext2D, view: Viewport): void {
     const p = this.hoverPoint;
     if (!p || !this.dragging) return;
-    // Color ring offset above the finger so it stays visible on touch screens.
-    const c = view.docToScreen(Math.floor(p.x) + 0.5, Math.floor(p.y) + 0.5);
-    const lift = p.pointerType === 'touch' ? 70 : 0;
+    // Loupe offset above the finger (or beside the cursor) so it stays visible.
+    const px = Math.floor(p.x);
+    const py = Math.floor(p.y);
+    const c = view.docToScreen(px + 0.5, py + 0.5);
+    const touch = p.pointerType === 'touch';
+    const cx = touch ? c.x : c.x + 64;
+    const cy = touch ? c.y - 96 : c.y - 64;
+    const R = 46;
     const color = this.target === 'bg' ? this.editor.bg : this.editor.fg;
+    // Magnified pixels around the picked one (each about 9 screen pixels).
+    const cells = 11;
+    const cell = (R * 2) / cells;
+    const img = this.editor.renderer.compositeImage;
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(c.x, c.y - lift, 26, 0, Math.PI * 2);
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = '#2c2f33';
+    ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
+    ctx.imageSmoothingEnabled = false;
+    const half = (cells - 1) / 2;
+    const w = this.editor.wrapPoint(px, py);
+    ctx.drawImage(img, w.x - half, w.y - half, cells, cells, cx - R, cy - R, cells * cell, cells * cell);
+    // Center pixel frame.
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#000';
+    ctx.strokeRect(cx - cell / 2 - 0.5, cy - cell / 2 - 0.5, cell + 1, cell + 1);
+    ctx.strokeStyle = '#fff';
+    ctx.strokeRect(cx - cell / 2 + 0.5, cy - cell / 2 + 0.5, cell - 1, cell - 1);
+    ctx.restore();
+    // Ring in the picked color around the loupe.
+    ctx.beginPath();
+    ctx.arc(cx, cy, R + 6, 0, Math.PI * 2);
     ctx.lineWidth = 12;
     ctx.strokeStyle = toCss({ ...color, a: 255 });
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(c.x, c.y - lift, 32, 0, Math.PI * 2);
-    ctx.arc(c.x, c.y - lift, 20, 0, Math.PI * 2);
+    ctx.arc(cx, cy, R + 12, 0, Math.PI * 2);
+    ctx.moveTo(cx + R, cy);
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
     strokeTwoTone(ctx);
   }
 }

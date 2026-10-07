@@ -317,3 +317,141 @@ test('palette lock, map to palette, select by color and feather', async ({ page 
   expect(soft).toBeGreaterThan(0);
   expect(soft).toBeLessThan(255);
 });
+
+test('QuickShape: holding still at the end of a stroke straightens it', async ({ page }) => {
+  await newImage(page, 32, 32);
+  await page.evaluate(() => (window as any).art.editor.updateSettings({ quickShape: 'always' }));
+  await selectTool(page, 'p');
+  await setFg(page, '#000000');
+  const path = [
+    [2, 20],
+    [6, 14],
+    [10, 22],
+    [16, 10],
+    [22, 18],
+    [28, 8],
+  ];
+  const pts = await Promise.all(path.map(([x, y]) => pixelPoint(page, x, y)));
+  await page.mouse.move(pts[0].x, pts[0].y);
+  await page.mouse.down();
+  for (const p of pts.slice(1)) await page.mouse.move(p.x, p.y, { steps: 4 });
+  await page.waitForTimeout(800);
+  await expect(page.locator('.opt-hint')).toContainText('Straight line');
+  // Dragging after the snap moves the end point.
+  const end = await pixelPoint(page, 28, 20);
+  await page.mouse.move(end.x, end.y, { steps: 3 });
+  await page.mouse.up();
+  const row = await page.evaluate(() => {
+    const c = (window as any).art.editor.doc.activeCel;
+    const out: number[] = [];
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) if (c.getPixel(x, y)[3]) out.push(y * 32 + x);
+    return out;
+  });
+  // A straight line from (2,20) to (28,20): exactly that row, nothing else.
+  expect(row).toEqual(Array.from({ length: 27 }, (_, i) => 20 * 32 + 2 + i));
+  expect(await page.evaluate(() => (window as any).art.editor.history.undoCount)).toBe(1);
+});
+
+test('QuickShape turns a closed loop into an ellipse; mouse strokes are untouched by default', async ({ page }) => {
+  await newImage(page, 40, 40);
+  await selectTool(page, 'p');
+  await setFg(page, '#000000');
+  const loop: [number, number][] = [];
+  for (let i = 0; i <= 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    loop.push([20 + Math.cos(a) * 12 + (i % 2), 20 + Math.sin(a) * 8]);
+  }
+  const draw = async (hold: number) => {
+    const pts = await Promise.all(loop.map(([x, y]) => pixelPoint(page, x, y)));
+    await page.mouse.move(pts[0].x, pts[0].y);
+    await page.mouse.down();
+    for (const p of pts.slice(1)) await page.mouse.move(p.x, p.y, { steps: 2 });
+    await page.waitForTimeout(hold);
+    const hint = await page.locator('.opt-hint').textContent();
+    await page.mouse.up();
+    return hint;
+  };
+  // Default setting: QuickShape only for pen and touch.
+  expect(await draw(800)).not.toContain('Ellipse');
+  await page.keyboard.press('Control+z');
+  await page.evaluate(() => (window as any).art.editor.updateSettings({ quickShape: 'always' }));
+  expect(await draw(800)).toBe('Ellipse');
+  // A clean ellipse: on the middle row only one pixel at each side.
+  const row = await page.evaluate(() => {
+    const c = (window as any).art.editor.doc.activeCel;
+    const out: number[] = [];
+    for (let x = 0; x < 40; x++) if (c.getPixel(x, 20)[3]) out.push(x);
+    return out;
+  });
+  expect(row).toHaveLength(2);
+  expect(row[0]).toBeGreaterThanOrEqual(8);
+  expect(row[0]).toBeLessThanOrEqual(9);
+  expect(row[1]).toBeGreaterThanOrEqual(31);
+  expect(row[1]).toBeLessThanOrEqual(33);
+});
+
+test('quick sliders on the canvas edge follow the active tool', async ({ page }) => {
+  await newImage(page, 16, 16);
+  const bar = page.locator('.quickbar');
+  await expect(bar).toBeHidden();
+  await page.evaluate(() => (window as any).art.editor.updateSettings({ quickBar: 'left' }));
+  await expect(bar).toBeVisible();
+  await selectTool(page, 'b');
+  const size = bar.getByLabel('Brush size');
+  await size.focus();
+  const before = await page.evaluate(() => (window as any).art.editor.options.brush.size);
+  for (let i = 0; i < 20; i++) await page.keyboard.press('ArrowUp');
+  const after = await page.evaluate(() => (window as any).art.editor.options.brush.size);
+  expect(after).toBeGreaterThan(before);
+  // Changing the size elsewhere updates the slider label.
+  await page.evaluate(() => (window as any).art.editor.setOption('brush', 'size', 42));
+  await expect(bar.locator('.quick-size .quick-value')).toHaveText('42px');
+  // Tools without a size hide that slider.
+  await selectTool(page, 'h');
+  await expect(bar.locator('.quick-size')).toBeHidden();
+  await page.evaluate(() => (window as any).art.editor.updateSettings({ quickBar: 'right' }));
+  await expect(bar).toHaveClass(/right/);
+});
+
+test('reference image window: open, pan, zoom and pick colors from it', async ({ page }) => {
+  await newImage(page, 16, 16);
+  const { encodePNG } = await import('../../src/io/png');
+  const px = new Uint8ClampedArray(4 * 4 * 4);
+  for (let i = 0; i < 16; i++) px.set(i < 8 ? [200, 30, 40, 255] : [20, 180, 90, 255], i * 4);
+  const png = Buffer.from(await encodePNG(4, 4, px));
+  const chooser = page.waitForEvent('filechooser');
+  await page.keyboard.press('Alt+r');
+  await (await chooser).setFiles({ name: 'ref.png', mimeType: 'image/png', buffer: png });
+  const win = page.locator('.reference-window');
+  await expect(win).toBeVisible();
+  await expect(win.locator('.reference-title')).toHaveText('ref.png');
+  // Top half is red, bottom half green: tap each.
+  const box = (await win.locator('.reference-view').boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.3);
+  expect(await page.evaluate(() => (window as any).art.editor.fg)).toEqual({ r: 200, g: 30, b: 40, a: 255 });
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.7);
+  expect(await page.evaluate(() => (window as any).art.editor.fg)).toEqual({ r: 20, g: 180, b: 90, a: 255 });
+  // Dragging pans instead of picking.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.7);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.2, { steps: 5 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => (window as any).art.editor.fg)).toEqual({ r: 20, g: 180, b: 90, a: 255 });
+  // The window moves with its title bar and closes; Alt+R shows it again without asking.
+  const header = win.locator('.reference-header');
+  const hb = (await header.boundingBox())!;
+  await page.mouse.move(hb.x + 20, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hb.x - 200, hb.y + 100, { steps: 4 });
+  await page.mouse.up();
+  const moved = (await win.boundingBox())!;
+  expect(moved.x).toBeLessThan(hb.x - 100);
+  await win.getByRole('button', { name: 'Close reference' }).click();
+  await expect(win).toBeHidden();
+  await page.keyboard.press('Alt+r');
+  await expect(win).toBeVisible();
+  // Painting on the canvas still works with the window open.
+  await selectTool(page, 'p');
+  await drawMouse(page, [[1, 1]]);
+  expect(await layerPixel(page, 1, 1)).toEqual([20, 180, 90, 255]);
+});

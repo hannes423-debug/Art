@@ -228,7 +228,19 @@ interface FreehandOptions {
   round?: boolean;
 }
 
-/** Base for brush, pencil and eraser: session handling, stabilizer, Shift+click lines, cursor. */
+/** How long the pointer must rest before a stroke snaps to a shape (QuickShape). */
+export const QUICKSHAPE_HOLD_MS = 600;
+/** Screen pixels of movement that still count as resting. */
+const QUICKSHAPE_STILL_PX = 6;
+/** A stroke must be at least this long (screen px) to be straightened. */
+const QUICKSHAPE_MIN_PATH = 24;
+
+/**
+ * Base for brush, pencil and eraser: session handling, stabilizer,
+ * Shift+click lines, cursor, and QuickShape (hold still at the end of a
+ * stroke to turn it into a straight line, or an ellipse if the stroke
+ * closes on itself).
+ */
 abstract class FreehandTool extends Tool {
   override readonly paints = true;
   override readonly altPicks = true;
@@ -238,6 +250,13 @@ abstract class FreehandTool extends Tool {
   private pixel: PixelStroke | null = null;
   private lazy: { x: number; y: number } | null = null;
   private lastRaw: StrokePoint | null = null;
+  /** Unsmoothed input of the current stroke (document and screen coordinates). */
+  private raw: { x: number; y: number; sx: number; sy: number; pressure: number }[] = [];
+  private quick: { kind: 'line' | 'ellipse'; start: StrokePoint; end: StrokePoint } | null = null;
+  private holdTimer = 0;
+  private holdAnchor = { x: 0, y: 0 };
+  private pointerType: ToolPointer['pointerType'] = 'mouse';
+  private shiftLine = false;
 
   protected abstract get mode(): 'paint' | 'erase';
   protected abstract get pixelMode(): boolean;
@@ -274,14 +293,134 @@ abstract class FreehandTool extends Tool {
     }
     this.lazy = { x: pt.x, y: pt.y };
     this.lastRaw = pt;
+    this.raw = [{ x: pt.x, y: pt.y, sx: p.sx, sy: p.sy, pressure: pt.pressure }];
+    this.quick = null;
+    this.shiftLine = !!prev;
+    this.pointerType = p.pointerType;
+    this.holdAnchor = { x: p.sx, y: p.sy };
+    this.armHold();
     this.session.apply();
     this.hoverPoint = p;
+  }
+
+  private quickShapeEnabled(): boolean {
+    const m = this.editor.settings.quickShape;
+    return m === 'always' || (m === 'touch' && this.pointerType !== 'mouse');
+  }
+
+  private armHold(): void {
+    clearTimeout(this.holdTimer);
+    if (!this.quickShapeEnabled() || this.shiftLine) return;
+    this.holdTimer = window.setTimeout(() => this.snapToShape(), QUICKSHAPE_HOLD_MS);
+  }
+
+  /** Replaces the stroke drawn so far with a clean line or ellipse. */
+  private snapToShape(): void {
+    const s = this.session;
+    const pts = this.raw;
+    if (!s || this.quick || pts.length < 2) return;
+    let path = 0;
+    for (let i = 1; i < pts.length; i++) path += Math.hypot(pts[i].sx - pts[i - 1].sx, pts[i].sy - pts[i - 1].sy);
+    if (path < QUICKSHAPE_MIN_PATH) return;
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const p of pts) {
+      x0 = Math.min(x0, p.sx);
+      y0 = Math.min(y0, p.sy);
+      x1 = Math.max(x1, p.sx);
+      y1 = Math.max(y1, p.sy);
+    }
+    const diag = Math.hypot(x1 - x0, y1 - y0);
+    // Closed loop: ends near its start and encloses a good part of its
+    // bounding box (an ellipse covers ~78%; a back-and-forth scribble ~0).
+    let area = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      area += a.sx * b.sy - b.sx * a.sy;
+    }
+    const boxArea = Math.max(1, (x1 - x0) * (y1 - y0));
+    const closed = Math.hypot(last.sx - first.sx, last.sy - first.sy) < 0.25 * diag && Math.abs(area / 2) / boxArea > 0.45;
+    const pressure = pts.reduce((a, p) => a + p.pressure, 0) / pts.length;
+    this.quick = {
+      kind: closed ? 'ellipse' : 'line',
+      start: { x: first.x, y: first.y, pressure },
+      end: { x: last.x, y: last.y, pressure },
+    };
+    this.redrawQuick();
+    this.editor.setStatusHint(closed ? 'Ellipse' : 'Straight line · keep holding and drag to adjust the end');
+    try {
+      navigator.vibrate?.(10);
+    } catch {
+      // Optional.
+    }
+  }
+
+  private redrawQuick(): void {
+    const s = this.session;
+    const q = this.quick;
+    if (!s || !q) return;
+    s.resetCoverage();
+    const o = this.opts();
+    const axes = this.editor.symmetryAxes();
+    let pts: StrokePoint[];
+    if (q.kind === 'line') pts = [q.start, q.end];
+    else {
+      // Ellipse through the stroke's bounding box, traced as a closed polyline.
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (const p of this.raw) {
+        x0 = Math.min(x0, p.x);
+        y0 = Math.min(y0, p.y);
+        x1 = Math.max(x1, p.x);
+        y1 = Math.max(y1, p.y);
+      }
+      const cx = (x0 + x1) / 2;
+      const cy = (y0 + y1) / 2;
+      const rx = (x1 - x0) / 2;
+      const ry = (y1 - y0) / 2;
+      const n = Math.max(16, Math.ceil(Math.PI * (rx + ry) * 2));
+      pts = [];
+      for (let i = 0; i <= n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        pts.push({ x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry, pressure: q.start.pressure });
+      }
+    }
+    if (this.pixelMode) {
+      this.pixel = new PixelStroke(s, o.size, !!o.round, !!o.pixelPerfect, 1, axes);
+      this.pixel.begin(Math.floor(pts[0].x), Math.floor(pts[0].y));
+      for (const p of pts.slice(1)) this.pixel.lineTo(Math.floor(p.x), Math.floor(p.y));
+    } else {
+      this.soft = new SoftStroke(s, o.size, o.hardness ?? 1, !!o.pressureSize, !!o.pressureOpacity, axes);
+      this.soft.begin(pts[0]);
+      for (const p of pts.slice(1)) this.soft.lineTo(p);
+    }
+    s.apply();
   }
 
   override move(p: ToolPointer): void {
     this.hoverPoint = p;
     if (!this.session) return;
     const raw = { x: p.x, y: p.y, pressure: this.pressureOf(p) };
+    if (this.quick) {
+      // After snapping to a line, dragging moves its end point.
+      if (this.quick.kind === 'line') {
+        this.quick.end = { ...raw, pressure: this.quick.end.pressure };
+        this.redrawQuick();
+      }
+      return;
+    }
+    this.raw.push({ x: p.x, y: p.y, sx: p.sx, sy: p.sy, pressure: raw.pressure });
+    if (Math.hypot(p.sx - this.holdAnchor.x, p.sy - this.holdAnchor.y) > QUICKSHAPE_STILL_PX) {
+      this.holdAnchor = { x: p.sx, y: p.sy };
+      this.armHold();
+    }
     this.lastRaw = raw;
     let target = raw;
     const smoothing = this.opts().smoothing ?? 0;
@@ -306,21 +445,32 @@ abstract class FreehandTool extends Tool {
   }
 
   override up(p: ToolPointer): void {
+    clearTimeout(this.holdTimer);
     if (!this.session) return;
-    if ((this.opts().smoothing ?? 0) > 0 && this.lastRaw) this.strokeTo(this.lastRaw);
-    const end = this.pixel?.last
-      ? { x: this.pixel.last.x + 0.5, y: this.pixel.last.y + 0.5 }
-      : this.soft?.last
-        ? { x: this.soft.last.x, y: this.soft.last.y }
-        : { x: p.x, y: p.y };
+    if (this.quick) this.editor.setStatusHint('');
+    else if ((this.opts().smoothing ?? 0) > 0 && this.lastRaw) this.strokeTo(this.lastRaw);
+    const end =
+      this.quick?.kind === 'line'
+        ? { x: this.quick.end.x, y: this.quick.end.y }
+        : this.pixel?.last
+          ? { x: this.pixel.last.x + 0.5, y: this.pixel.last.y + 0.5 }
+          : this.soft?.last
+            ? { x: this.soft.last.x, y: this.soft.last.y }
+            : { x: p.x, y: p.y };
     this.editor.commitPaint(this.session, this.label);
     this.editor.lastStrokeEnd = end;
     this.session = null;
     this.soft = null;
     this.pixel = null;
+    this.quick = null;
+    this.raw = [];
   }
 
   override cancel(): void {
+    clearTimeout(this.holdTimer);
+    if (this.quick) this.editor.setStatusHint('');
+    this.quick = null;
+    this.raw = [];
     this.session?.cancel();
     this.session = null;
     this.soft = null;

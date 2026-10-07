@@ -655,6 +655,23 @@ export function settingsDialog(app: App): void {
     s.wheelZoom ? 'zoom' : 'pan',
   );
   const rotate = checkbox('Rotate the canvas with two fingers', s.rotateGesture);
+  const quickShape = selectInput(
+    [
+      { value: 'touch', label: 'With pen and touch' },
+      { value: 'always', label: 'Always (also with the mouse)' },
+      { value: 'off', label: 'Off' },
+    ],
+    s.quickShape,
+  );
+  const quickBar = selectInput(
+    [
+      { value: 'auto', label: 'Automatic (touch tablets)' },
+      { value: 'left', label: 'Left edge' },
+      { value: 'right', label: 'Right edge' },
+      { value: 'off', label: 'Off' },
+    ],
+    s.quickBar,
+  );
   const pixelGrid = checkbox('Show pixel grid when zoomed in', s.pixelGrid);
   const smooth = checkbox('Smooth zoom (turn off for crisp pixel art)', s.smooth);
   const onion = h('input', { type: 'range', min: '0.1', max: '0.8', step: '0.05', value: String(s.onionOpacity), 'aria-label': 'Onion skin opacity' });
@@ -667,6 +684,12 @@ export function settingsDialog(app: App): void {
       field('Touch input', touch),
       field('Mouse wheel', wheel),
       rotate.el,
+      field(
+        'Hold to straighten strokes (QuickShape)',
+        quickShape,
+        'Stop at the end of a stroke and hold: it becomes a straight line, or an ellipse if it closes.',
+      ),
+      field('Size and opacity sliders on the canvas', quickBar),
       h('h3', { class: 'dialog-section' }, 'View'),
       pixelGrid.el,
       smooth.el,
@@ -687,6 +710,8 @@ export function settingsDialog(app: App): void {
             pixelGrid: pixelGrid.input.checked,
             smooth: smooth.input.checked,
             onionOpacity: Number(onion.value),
+            quickShape: quickShape.value as 'touch' | 'always' | 'off',
+            quickBar: quickBar.value as 'auto' | 'left' | 'right' | 'off',
           }),
       },
     ],

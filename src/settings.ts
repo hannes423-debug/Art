@@ -26,6 +26,10 @@ export interface Settings {
   tileMode: 'off' | 'both' | 'x' | 'y';
   /** Snap every painted color to the nearest palette color. */
   paletteLock: boolean;
+  /** Hold still at the end of a stroke to straighten it: pen/touch only, always, or never. */
+  quickShape: 'touch' | 'always' | 'off';
+  /** Size/opacity sliders on the canvas edge. auto = on touch tablets. */
+  quickBar: 'auto' | 'left' | 'right' | 'off';
 }
 
 export function defaultSettings(): Settings {
@@ -44,6 +48,8 @@ export function defaultSettings(): Settings {
     sidePanel: true,
     tileMode: 'off',
     paletteLock: false,
+    quickShape: 'touch',
+    quickBar: 'auto',
   };
 }
 

@@ -235,6 +235,7 @@ export const MENUS: MenuDef[] = [
       'view.tileX',
       'view.tileY',
       '-',
+      'view.reference',
       'view.timeline',
       'view.panel',
       'view.canvasOnly',
@@ -480,6 +481,14 @@ export function createActions(app: App): ActionRegistry {
         if (e.options.symmetry.mode !== 'off' && !e.toolUsesSymmetry()) e.setTool('pencil');
       },
       checked: () => e.options.symmetry.mode === 'y' || e.options.symmetry.mode === 'xy',
+    },
+    {
+      id: 'view.reference',
+      label: 'Reference image…',
+      keys: ['alt+r'],
+      icon: 'image',
+      run: () => app.toggleReference(),
+      checked: () => app.reference.visible,
     },
     { id: 'view.symmetryAxis', label: 'Symmetry settings…', run: () => app.showSymmetryAxis() },
     {

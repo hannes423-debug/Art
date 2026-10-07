@@ -3,18 +3,18 @@ import type { OptionSpec } from '../tools/tool';
 import { openDialog } from './dialog';
 import { h, icon } from './dom';
 
-function fmt(spec: Extract<OptionSpec, { type: 'slider' }>, v: number): string {
+export function fmt(spec: Extract<OptionSpec, { type: 'slider' }>, v: number): string {
   if (spec.percent) return `${Math.round(v * 100)}%`;
   return `${Math.round(v)}${spec.unit ?? ''}`;
 }
 
 /** Slider positions are 0..1000; log sliders give fine control at small sizes. */
-function toPos(spec: Extract<OptionSpec, { type: 'slider' }>, v: number): number {
+export function toPos(spec: Extract<OptionSpec, { type: 'slider' }>, v: number): number {
   if (spec.log) return (Math.log(v / spec.min) / Math.log(spec.max / spec.min)) * 1000;
   return ((v - spec.min) / (spec.max - spec.min)) * 1000;
 }
 
-function fromPos(spec: Extract<OptionSpec, { type: 'slider' }>, pos: number): number {
+export function fromPos(spec: Extract<OptionSpec, { type: 'slider' }>, pos: number): number {
   const t = pos / 1000;
   let v = spec.log ? spec.min * Math.pow(spec.max / spec.min, t) : spec.min + t * (spec.max - spec.min);
   const step = spec.step ?? 1;

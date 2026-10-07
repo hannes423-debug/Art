@@ -34,6 +34,8 @@ const TAP_MAX_MOVE = 14;
 const GESTURE_GRACE_MS = 250;
 const ROTATE_THRESHOLD = (12 * Math.PI) / 180;
 const ROTATE_SNAP = (6 * Math.PI) / 180;
+/** Touch and hold without moving: the paint tool becomes an eyedropper. */
+const LONG_PRESS_MS = 450;
 
 /**
  * Translates pointer events on the canvas into tool strokes and view
@@ -64,6 +66,8 @@ export class CanvasInput {
   private spaceDown = false;
   private rect: DOMRect;
   private wheelAccum = 0;
+  private longPressTimer = 0;
+  private lastToolEvent: PointerEvent | null = null;
 
   constructor(editor: Editor, el: HTMLElement) {
     this.editor = editor;
@@ -202,6 +206,25 @@ export class CanvasInput {
     this.toolStartPos = { x: p.sx, y: p.sy };
     tool.down(p);
     editor.setPointer({ x: p.x, y: p.y });
+    this.lastToolEvent = e;
+    clearTimeout(this.longPressTimer);
+    if (e.pointerType === 'touch' && tool.altPicks) {
+      this.longPressTimer = window.setTimeout(() => this.longPressPick(), LONG_PRESS_MS);
+    }
+  }
+
+  /** A finger resting on the canvas with a paint tool picks colors instead (with a loupe). */
+  private longPressPick(): void {
+    const e = this.lastToolEvent;
+    const tool = this.activeTool;
+    if (this.mode !== 'tool' || !e || !tool || e.pointerId !== this.toolPointerId) return;
+    const tp = this.pointers.get(e.pointerId);
+    if (!tp || Math.hypot(tp.x - tp.startX, tp.y - tp.startY) > TAP_MAX_MOVE) return;
+    tool.cancel();
+    const picker = this.editor.tools.picker;
+    this.activeTool = picker;
+    picker.down(this.toPointer(e));
+    this.feedback('Color picker');
   }
 
   private onMove = (e: PointerEvent): void => {
@@ -223,6 +246,8 @@ export class CanvasInput {
     if (this.tap && Math.hypot(sx - tp.startX, sy - tp.startY) > TAP_MAX_MOVE) this.tap.moved = true;
 
     if (this.mode === 'tool' && e.pointerId === this.toolPointerId && this.activeTool) {
+      this.lastToolEvent = e;
+      if (Math.hypot(sx - tp.startX, sy - tp.startY) > TAP_MAX_MOVE) clearTimeout(this.longPressTimer);
       const events = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
       for (const ev of events.length ? events : [e]) this.activeTool.move(this.toPointer(ev));
       const last = this.toPointer(e);
@@ -261,6 +286,7 @@ export class CanvasInput {
       // ignore
     }
     if (this.mode === 'tool' && e.pointerId === this.toolPointerId) {
+      clearTimeout(this.longPressTimer);
       const tool = this.activeTool!;
       // A cancelled finger stroke is discarded; pen/mouse strokes are kept.
       if (cancelled && e.pointerType === 'touch') tool.cancel();
@@ -317,6 +343,7 @@ export class CanvasInput {
       const moved = toolPointer ? Math.hypot(toolPointer.x - this.toolStartPos.x, toolPointer.y - this.toolStartPos.y) : 0;
       if (quick && moved < 40) {
         // The first finger was the start of a pinch, not a stroke.
+        clearTimeout(this.longPressTimer);
         tool?.cancel();
         this.activeTool = null;
         this.toolPointerId = null;

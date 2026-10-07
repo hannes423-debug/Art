@@ -77,6 +77,10 @@ fast and canvas-first.
 - Pen: draws with pressure; pen eraser end erases. Palm rejection while the pen is down
 - Finger: one finger draws, two fingers pan and pinch-zoom (optional rotation), two-finger tap = undo, three-finger tap = redo
 - Once a pen is detected, fingers switch to navigation (configurable in Settings)
+- QuickShape: stop at the end of a stroke and hold — it becomes a straight line (drag to adjust the end) or, if the stroke closes, an ellipse
+- Touch and hold with a paint tool to pick a color, with a magnifier loupe above your finger
+- Size and opacity sliders on the edge of the canvas on tablets (left or right, in Settings)
+- Reference image window (Alt+R): move, resize, pan and zoom it; tap it to pick exact colors
 - Zoom, pan, fit, 100%, rotate and mirror the view
 - **Canvas only** mode (Tab, or the focus button in the top bar): everything but the canvas disappears; exit with ✕, Tab or the back gesture
 - **Fullscreen** (where the browser allows it)

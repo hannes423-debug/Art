@@ -88,6 +88,11 @@ export class Renderer {
     this.cctx = cctx;
   }
 
+  /** The composited image (document size), e.g. for a magnifier. */
+  get compositeImage(): HTMLCanvasElement {
+    return this.composite;
+  }
+
   get frame(): number {
     return this.displayFrame ?? this.doc?.activeFrame ?? 0;
   }

@@ -26,7 +26,10 @@ import {
   shortcutsDialog,
 } from './ui/dialogs';
 import { h, icon, iconButton, isTyping } from './ui/dom';
+import { pickFiles } from './io/files';
 import { LayersPanel } from './ui/layers-panel';
+import { QuickBar } from './ui/quick-bar';
+import { ReferenceWindow } from './ui/reference';
 import { closePopup, menuBar, mobileMenu } from './ui/menu';
 import { OptionsBar } from './ui/options-bar';
 import { StatusBar, zoomLabel } from './ui/statusbar';
@@ -58,6 +61,8 @@ export class App {
   exportSettings: ExportSettings = { format: 'png', scale: 1, content: 'image', columns: 0, padding: 0, json: true, quality: 0.92 };
 
   private readonly stage: HTMLElement;
+  private readonly quickBar: QuickBar;
+  readonly reference: ReferenceWindow;
   private readonly canvas: HTMLCanvasElement;
   private readonly toolbar: Toolbar;
   private readonly optionsBar: OptionsBar;
@@ -162,7 +167,10 @@ export class App {
       document.fullscreenEnabled ? fullscreen('floating') : null,
       iconButton('close', 'Exit canvas only (Tab)', () => this.toggleCanvasOnly(false), 'floating exit-focus'),
     );
-    this.stage = h('div', { class: 'stage' }, this.canvas, focusControls, this.hud, this.busyEl, this.toasts.el);
+    this.quickBar = new QuickBar(e, undo('small'), redo('small'));
+    this.reference = new ReferenceWindow(e);
+    this.reference.onOpen = () => void this.openReference();
+    this.stage = h('div', { class: 'stage' }, this.canvas, focusControls, this.quickBar.el, this.reference.el, this.hud, this.busyEl, this.toasts.el);
     this.sidePanel = h('aside', { class: 'sidepanel', 'aria-label': 'Panels' });
     this.main = h('div', { class: 'main' }, this.stage, this.sidePanel);
     this.bottombar = h('div', { class: 'bottombar' });
@@ -243,12 +251,18 @@ export class App {
       this.sidePanel.append(this.colorPanel.el, this.layersPanel.el);
     }
     this.mobileMenuEl.refresh?.();
+    if (!initial) this.applyPanels();
   }
 
   private applyPanels(): void {
     const s = this.editor.settings;
     this.root.classList.toggle('no-sidepanel', !s.sidePanel);
     this.root.classList.toggle('show-timeline', s.showTimeline);
+    // Quick sliders: automatic on touch tablets (phones have the slider strip).
+    const coarse = matchMedia('(pointer: coarse)').matches;
+    const side = s.quickBar === 'auto' ? (coarse && this.layout !== 'mobile' ? 'left' : 'off') : s.quickBar;
+    this.quickBar.el.hidden = side === 'off';
+    this.quickBar.el.classList.toggle('right', side === 'right');
   }
 
   toggleSidePanel(): void {
@@ -652,6 +666,23 @@ export class App {
 
   showCanvasSize(): void {
     canvasSizeDialog(this);
+  }
+
+  /** Shows the reference window, asking for an image the first time. */
+  toggleReference(): void {
+    if (this.reference.visible) this.reference.hide();
+    else if (!this.reference.reopen()) void this.openReference();
+  }
+
+  async openReference(): Promise<void> {
+    const files = await pickFiles([{ description: 'Images', accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'] } }]);
+    if (!files.length) return;
+    try {
+      const img = await decodeImage(files[0].file);
+      this.reference.show(img, files[0].file.name);
+    } catch (err) {
+      this.toast(`Could not open ${files[0].file.name}: ${err instanceof Error ? err.message : String(err)}`, true);
+    }
   }
 
   showMapToPalette(): void {

@@ -189,3 +189,37 @@ test('tapping the active tool opens its options sheet', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Brush options' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Pressure → size' })).toBeVisible();
 });
+
+test('touch and hold picks a color with a loupe instead of painting', async ({ page }) => {
+  await newImage(page, 16, 16, 'white');
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    const d = e.doc.activeCel.ensureData();
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) d.set([10, 120, 220, 255], (y * 16 + x) * 4);
+    e.doc.activeCel.touch({ x: 0, y: 0, w: 16, h: 16 });
+    e.doc.notifyPixels(e.doc.activeCel, { x: 0, y: 0, w: 16, h: 16 });
+    e.setTool('pencil');
+  });
+  await setFg(page, '#000000');
+  const client = await cdp(page);
+  const p = await pixelPoint(page, 3, 3);
+  await touch(client, 'touchStart', [p]);
+  await page.waitForTimeout(700);
+  // While holding, the loupe is drawn and the start dab has been undone.
+  expect(await layerPixel(page, 3, 3)).toEqual([10, 120, 220, 255]);
+  const q = await pixelPoint(page, 12, 12);
+  await touch(client, 'touchMove', [q]);
+  await page.waitForTimeout(30);
+  await touch(client, 'touchMove', [p]);
+  await page.waitForTimeout(30);
+  await touch(client, 'touchEnd', []);
+  expect(await page.evaluate(() => (window as any).art.editor.fg)).toEqual({ r: 10, g: 120, b: 220, a: 255 });
+  expect(await page.evaluate(() => (window as any).art.editor.tool.id)).toBe('pencil');
+  expect(await historyCount(page)).toBe(0);
+  expect(await layerPixel(page, 12, 12)).toEqual([255, 255, 255, 255]);
+  // A normal tap still paints.
+  await touch(client, 'touchStart', [q]);
+  await page.waitForTimeout(40);
+  await touch(client, 'touchEnd', []);
+  expect(await layerPixel(page, 12, 12)).toEqual([10, 120, 220, 255]);
+});
