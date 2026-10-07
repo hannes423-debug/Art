@@ -3,7 +3,22 @@ import type { Overlay } from '../render/renderer';
 import type { Viewport } from '../render/viewport';
 
 export type ToolId =
-  'brush' | 'pencil' | 'eraser' | 'line' | 'rect' | 'ellipse' | 'fill' | 'picker' | 'select-rect' | 'select-ellipse' | 'lasso' | 'wand' | 'move' | 'hand';
+  | 'brush'
+  | 'pencil'
+  | 'eraser'
+  | 'shade'
+  | 'line'
+  | 'rect'
+  | 'ellipse'
+  | 'fill'
+  | 'gradient'
+  | 'picker'
+  | 'select-rect'
+  | 'select-ellipse'
+  | 'lasso'
+  | 'wand'
+  | 'move'
+  | 'hand';
 
 /** A pointer sample in both document and screen space. */
 export interface ToolPointer {
@@ -100,6 +115,8 @@ export interface ToolOptions {
   wand: { tolerance: number; contiguous: boolean; sampleMerged: boolean };
   /** Mirror painting for brush, pencil and eraser. Axis positions in pixels; -1 = canvas center. */
   symmetry: { mode: 'off' | 'x' | 'y' | 'xy'; x: number; y: number };
+  shade: { size: number; direction: 'next' | 'prev'; round: boolean };
+  gradient: { shape: 'linear' | 'radial'; to: 'bg' | 'transparent'; dither: boolean; opacity: number };
 }
 
 export function defaultToolOptions(): ToolOptions {
@@ -113,6 +130,8 @@ export function defaultToolOptions(): ToolOptions {
     select: { mode: 'replace' },
     wand: { tolerance: 0, contiguous: true, sampleMerged: false },
     symmetry: { mode: 'off', x: -1, y: -1 },
+    shade: { size: 1, direction: 'next', round: false },
+    gradient: { shape: 'linear', to: 'bg', dither: false, opacity: 1 },
   };
 }
 

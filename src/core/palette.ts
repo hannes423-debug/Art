@@ -131,3 +131,39 @@ export function extractColors(data: Uint8ClampedArray, limit = 256): RGBA[] | nu
   }
   return out;
 }
+
+/** Packed 0xRRGGBB. */
+export type PackedRGB = number;
+
+/**
+ * Returns a function mapping any RGB color to the nearest palette color
+ * (packed 0xRRGGBB), using a perceptually weighted distance. Results are
+ * cached, so mapping a whole image costs one search per distinct color.
+ */
+export function nearestColorFinder(palette: RGBA[]): (r: number, g: number, b: number) => PackedRGB {
+  const pal = palette.map((c) => (c.r << 16) | (c.g << 8) | c.b);
+  const cache = new Map<number, number>();
+  for (const p of pal) cache.set(p, p);
+  return (r, g, b) => {
+    const key = (r << 16) | (g << 8) | b;
+    let hit = cache.get(key);
+    if (hit !== undefined) return hit;
+    let best = Infinity;
+    hit = key;
+    for (const c of pal) {
+      const dr = ((c >> 16) & 255) - r;
+      const dg = ((c >> 8) & 255) - g;
+      const db = (c & 255) - b;
+      // Redmean-like weights: green matters most, then blue/red depending on redness.
+      const rm = (((c >> 16) & 255) + r) / 2;
+      const d = (2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db;
+      if (d < best) {
+        best = d;
+        hit = c;
+      }
+    }
+    if (cache.size > 65536) cache.clear();
+    cache.set(key, hit);
+    return hit;
+  };
+}

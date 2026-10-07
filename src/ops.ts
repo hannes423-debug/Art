@@ -9,6 +9,8 @@ import { PaintSession } from './core/paint';
 import type { SelectionState } from './core/selection';
 import { type Pixels, Surface, allocPixels } from './core/surface';
 import { TileRecorder } from './core/tiles';
+import { nearestColorFinder } from './core/palette';
+import { bayerThreshold } from './core/raster';
 
 /**
  * Undoable document operations. Each function builds a Command and runs it
@@ -325,6 +327,81 @@ export function replaceColor(doc: ArtDocument, history: History, o: ReplaceColor
   return changed;
 }
 
+// ---------------------------------------------------------- Palette
+
+/**
+ * Maps every pixel's color to the nearest palette color (alpha is kept),
+ * on the active layer or all visible layers, in one frame or all of them.
+ * Optional ordered dithering mixes the two nearest palette colors.
+ * Returns the number of pixels changed; one undo step.
+ */
+export function mapToPalette(doc: ArtDocument, history: History, palette: RGBA[], o: { allLayers: boolean; allFrames: boolean; dither: boolean }): number {
+  if (!palette.length) return 0;
+  const near = nearestColorFinder(palette);
+  const layers = o.allLayers ? doc.layers.filter((l) => l.visible) : [doc.activeLayer];
+  const frames = o.allFrames ? doc.frames.map((_, i) => i) : [doc.activeFrame];
+  const sel = doc.selection.mask;
+  const area = doc.selection.bounds ?? { x: 0, y: 0, w: doc.width, h: doc.height };
+  const w = doc.width;
+  const patches: Command[] = [];
+  let changed = 0;
+  const seen = new Set<Surface>();
+  for (const layer of layers) {
+    for (const f of frames) {
+      const cel = layer.cels[f];
+      if (seen.has(cel) || !cel.data) continue;
+      seen.add(cel);
+      const data = cel.data;
+      const rec = new TileRecorder(cel);
+      rec.record(area);
+      let n = 0;
+      for (let y = area.y; y < area.y + area.h; y++) {
+        for (let x = area.x; x < area.x + area.w; x++) {
+          const i = y * w + x;
+          if (sel && sel[i] < 128) continue;
+          const p = i * 4;
+          if (data[p + 3] === 0) continue;
+          const r = data[p];
+          const g = data[p + 1];
+          const b = data[p + 2];
+          let c = near(r, g, b);
+          if (o.dither) {
+            // Ordered dither: offset the color along its error by a Bayer
+            // threshold, so pixels halfway between two palette colors split
+            // 50/50 and exact palette colors stay unchanged.
+            const k = 4 * (bayerThreshold(x, y) - 0.5);
+            const er = r - (c >> 16);
+            const eg = g - ((c >> 8) & 255);
+            const eb = b - (c & 255);
+            c = near(clamp255(r + er * k), clamp255(g + eg * k), clamp255(b + eb * k));
+          }
+          const nr = c >> 16;
+          const ng = (c >> 8) & 255;
+          const nb = c & 255;
+          if (nr === r && ng === g && nb === b) continue;
+          data[p] = nr;
+          data[p + 1] = ng;
+          data[p + 2] = nb;
+          n++;
+        }
+      }
+      changed += n;
+      if (n) {
+        cel.touch(area);
+        doc.notifyPixels(cel, area);
+      }
+      const patch = rec.finish('Map to palette', (s, r) => doc.notifyPixels(s, r));
+      if (patch) patches.push(patch);
+    }
+  }
+  if (patches.length) history.push(patches.length === 1 ? patches[0] : new CompoundCommand('Map to palette', patches));
+  return changed;
+}
+
+function clamp255(v: number): number {
+  return v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
+}
+
 // ---------------------------------------------------------- Image geometry
 
 /**
@@ -494,6 +571,30 @@ export function setAllFrameDurations(doc: ArtDocument, history: History, ms: num
 }
 
 // ------------------------------------------------------------- Selection
+
+/** Selection mask of every pixel matching `color` on the active layer (or the visible image). */
+export function colorMask(doc: ArtDocument, color: RGBA, tolerance: number, merged: boolean): { mask: Uint8Array; bounds: Rect | null } {
+  const src = merged ? compositeFrame(doc, doc.activeFrame) : doc.activeCel.data;
+  const mask = new Uint8Array(doc.width * doc.height);
+  let bounds: Rect | null = null;
+  const w = doc.width;
+  const t = Math.max(0, Math.min(255, Math.round(tolerance)));
+  for (let y = 0; y < doc.height; y++) {
+    let x0 = -1;
+    for (let x = 0; x <= w; x++) {
+      const i = y * w + x;
+      const hit = x < w && (src ? colorMatches(src[i * 4], src[i * 4 + 1], src[i * 4 + 2], src[i * 4 + 3], color, t) : color.a === 0 || t >= color.a);
+      if (hit) {
+        mask[i] = 255;
+        if (x0 < 0) x0 = x;
+      } else if (x0 >= 0) {
+        bounds = unionRect(bounds, { x: x0, y, w: x - x0, h: 1 });
+        x0 = -1;
+      }
+    }
+  }
+  return { mask, bounds };
+}
 
 export function selectionFromAlpha(doc: ArtDocument, history: History): void {
   const cel = doc.activeCel;

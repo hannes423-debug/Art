@@ -5,7 +5,7 @@ import type { MorphShape } from '../core/morphology';
 import { type ExportFormat, isAnimatedFormat } from '../io/image';
 import { canShareFile } from '../io/files';
 import type { ProjectMeta } from '../io/storage';
-import { replaceColor, resizeCanvas, scaleImage } from '../ops';
+import { colorMask, mapToPalette, replaceColor, resizeCanvas, scaleImage } from '../ops';
 import type { TouchMode } from '../settings';
 import { checkbox, confirmDialog, field, numberInput, openDialog, readNumber, selectInput } from './dialog';
 import { formatShortcut, h, icon } from './dom';
@@ -393,6 +393,94 @@ export function replaceColorDialog(app: App): void {
   });
 }
 
+// ------------------------------------------------------------- Map to palette
+
+const mapDefaults = { allLayers: false, allFrames: false, dither: false };
+
+export function mapToPaletteDialog(app: App): void {
+  const e = app.editor;
+  const d = mapDefaults;
+  const n = e.palette.length;
+  if (!n) {
+    e.toast('The palette is empty. Load or add colors first.', true);
+    return;
+  }
+  const layers = checkbox('All visible layers', d.allLayers);
+  const frames = checkbox('All frames', d.allFrames);
+  const dither = checkbox('Dither (mix the two nearest colors)', d.dither);
+  const content: Node[] = [h('p', null, `Every color is replaced by the nearest of the ${n} palette colors. Transparency is kept.`), layers.el];
+  if (e.doc.frames.length > 1) content.push(frames.el);
+  content.push(dither.el);
+  if (e.doc.selection.active) content.push(h('p', { class: 'field-hint' }, 'Only pixels inside the selection are changed.'));
+  openDialog({
+    title: 'Map colors to palette',
+    content,
+    buttons: [
+      { label: 'Cancel' },
+      {
+        label: 'Map colors',
+        primary: true,
+        onClick: () => {
+          d.allLayers = layers.input.checked;
+          d.allFrames = frames.input.checked && e.doc.frames.length > 1;
+          d.dither = dither.input.checked;
+          e.commitFloating();
+          if (!d.allLayers && !e.canEditPixels()) return;
+          const changed = mapToPalette(e.doc, e.history, e.palette, d);
+          e.toast(changed ? `Changed ${changed} pixel${changed === 1 ? '' : 's'}` : 'All colors are already in the palette');
+        },
+      },
+    ],
+  });
+}
+
+// ------------------------------------------------------------- Select color
+
+const selectColorDefaults = { tolerance: 0, merged: false };
+
+export function selectColorDialog(app: App): void {
+  const e = app.editor;
+  const d = selectColorDefaults;
+  const color = colorField(app, 'Color', e.fg);
+  const tol = numberInput(d.tolerance, 0, 255);
+  const merged = checkbox('Use all visible layers', d.merged);
+  const mode = selectInput(
+    [
+      { value: 'replace', label: 'New selection' },
+      { value: 'add', label: 'Add to selection' },
+      { value: 'subtract', label: 'Subtract from selection' },
+      { value: 'intersect', label: 'Intersect with selection' },
+    ],
+    'replace',
+  );
+  openDialog({
+    title: 'Select by color',
+    content: [color.el, field('Tolerance', tol, '0 = only this exact color'), merged.el, field('Mode', mode)],
+    buttons: [
+      { label: 'Cancel' },
+      {
+        label: 'Select',
+        primary: true,
+        onClick: () => {
+          const c = color.read();
+          if (!c) {
+            e.toast('Enter the color as #RRGGBB or #RRGGBBAA', true);
+            return false;
+          }
+          d.tolerance = readNumber(tol, 0, 255, 0);
+          d.merged = merged.input.checked;
+          const { mask, bounds } = colorMask(e.doc, c, d.tolerance, d.merged);
+          if (!bounds && mode.value === 'replace') {
+            e.toast('No pixels of that color');
+            return;
+          }
+          e.applySelection(mask, bounds, mode.value as 'replace' | 'add' | 'subtract' | 'intersect', 'Select by color');
+        },
+      },
+    ],
+  });
+}
+
 // ------------------------------------------------------------- Symmetry axis
 
 export function symmetryAxisDialog(app: App): void {
@@ -454,7 +542,7 @@ export function symmetryAxisDialog(app: App): void {
 
 // ----------------------------------------------------------- Grow / shrink
 
-export type SelectionModifyKind = 'grow' | 'shrink' | 'border';
+export type SelectionModifyKind = 'grow' | 'shrink' | 'border' | 'feather';
 
 /** Last used values, so repeating an adjustment is one Enter away. */
 const modifyDefaults = { radius: 1, shape: 'round' as MorphShape, fromCanvasEdge: true, side: 'outside' as 'outside' | 'inside' };
@@ -478,9 +566,12 @@ export function modifySelectionDialog(app: App, kind: SelectionModifyKind): void
     ],
     d.side,
   );
-  const titles = { grow: 'Grow selection', shrink: 'Shrink selection', border: 'Border selection' };
-  const verbs = { grow: 'Grow', shrink: 'Shrink', border: 'Select border' };
-  const content: Node[] = [h('div', { class: 'row' }, field(kind === 'border' ? 'Width (px)' : 'By (px)', amount), field('Shape', shape))];
+  const titles = { grow: 'Grow selection', shrink: 'Shrink selection', border: 'Border selection', feather: 'Feather selection' };
+  const verbs = { grow: 'Grow', shrink: 'Shrink', border: 'Select border', feather: 'Feather' };
+  const content: Node[] =
+    kind === 'feather'
+      ? [field('Radius (px)', amount, 'Soft edge: painting fades out across it.')]
+      : [h('div', { class: 'row' }, field(kind === 'border' ? 'Width (px)' : 'By (px)', amount), field('Shape', shape))];
   if (kind === 'shrink') content.push(edge.el);
   if (kind === 'border') {
     content.push(field('Position', side));
@@ -499,7 +590,8 @@ export function modifySelectionDialog(app: App, kind: SelectionModifyKind): void
           d.shape = shape.value as MorphShape;
           d.fromCanvasEdge = edge.input.checked;
           d.side = side.value as 'outside' | 'inside';
-          if (kind === 'grow') e.modifySelection({ kind, radius: d.radius, shape: d.shape });
+          if (kind === 'feather') e.modifySelection({ kind, radius: d.radius });
+          else if (kind === 'grow') e.modifySelection({ kind, radius: d.radius, shape: d.shape });
           else if (kind === 'shrink') e.modifySelection({ kind, radius: d.radius, shape: d.shape, fromCanvasEdge: d.fromCanvasEdge });
           else e.modifySelection({ kind, radius: d.radius, shape: d.shape, side: d.side });
         },

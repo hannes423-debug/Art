@@ -174,3 +174,146 @@ test('exports a lossless APNG', async ({ page }) => {
   expect(frames.map((f) => f.red)).toEqual([[6], [7], [8]]);
   expect(frames.map((f) => f.duration)).toEqual([100, 150, 200]);
 });
+
+test('shading moves pixels one palette step per stroke', async ({ page }) => {
+  await newImage(page, 8, 8);
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    e.setPalette([
+      { r: 10, g: 10, b: 10, a: 255 },
+      { r: 80, g: 80, b: 80, a: 255 },
+      { r: 160, g: 160, b: 160, a: 255 },
+    ]);
+    const d = e.doc.activeCel.ensureData();
+    for (let i = 0; i < 64; i++) d.set([80, 80, 80, 255], i * 4);
+    d.set([1, 2, 3, 255], (2 * 8 + 4) * 4); // not in the palette
+    e.doc.activeCel.touch({ x: 0, y: 0, w: 8, h: 8 });
+    e.doc.notifyPixels(e.doc.activeCel, { x: 0, y: 0, w: 8, h: 8 });
+  });
+  await page.keyboard.press('k');
+  expect(await page.evaluate(() => (window as any).art.editor.tool.id)).toBe('shade');
+  // Scrubbing back and forth over the same pixels shades them only once.
+  await drawMouse(page, [
+    [1, 2],
+    [5, 2],
+    [1, 2],
+    [5, 2],
+  ]);
+  expect(await layerPixel(page, 1, 2)).toEqual([160, 160, 160, 255]);
+  expect(await layerPixel(page, 3, 2)).toEqual([160, 160, 160, 255]);
+  expect(await layerPixel(page, 4, 2)).toEqual([1, 2, 3, 255]);
+  expect(await layerPixel(page, 1, 3)).toEqual([80, 80, 80, 255]);
+  // Right button steps the other way; the end of the ramp stays put.
+  await drawMouse(page, [[1, 2]], 'right');
+  expect(await layerPixel(page, 1, 2)).toEqual([80, 80, 80, 255]);
+  await drawMouse(page, [[1, 5]], 'right');
+  await drawMouse(page, [[1, 5]], 'right');
+  expect(await layerPixel(page, 1, 5)).toEqual([10, 10, 10, 255]);
+});
+
+test('gradient tool: smooth, dithered and limited to the selection', async ({ page }) => {
+  await newImage(page, 16, 4);
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    e.setColor('fg', { r: 0, g: 0, b: 0, a: 255 });
+    e.setColor('bg', { r: 255, g: 255, b: 255, a: 255 });
+  });
+  await page.keyboard.press('Shift+g');
+  expect(await page.evaluate(() => (window as any).art.editor.tool.id)).toBe('gradient');
+  const drag = async () => {
+    const z = await page.evaluate(() => (window as any).art.editor.view.zoom);
+    const a = await pixelPoint(page, 0, 1);
+    const b = await pixelPoint(page, 15, 1);
+    await page.mouse.move(a.x - z / 2, a.y);
+    await page.mouse.down();
+    await page.mouse.move(b.x + z / 2, b.y, { steps: 6 });
+    await page.mouse.up();
+  };
+  await drag();
+  const left = await layerPixel(page, 0, 0);
+  const mid = await layerPixel(page, 8, 3);
+  const right = await layerPixel(page, 15, 2);
+  expect(left[0]).toBeLessThan(20);
+  expect(mid[0]).toBeGreaterThan(110);
+  expect(mid[0]).toBeLessThan(150);
+  expect(right[0]).toBeGreaterThan(235);
+  expect(await page.evaluate(() => (window as any).art.editor.history.undoCount)).toBe(1);
+  await page.keyboard.press('Control+z');
+  // Dithered: only the two end colors, roughly half of each in the middle.
+  await page.locator('.optionsbar').getByRole('button', { name: 'Dither' }).click();
+  await drag();
+  const colors = await page.evaluate(() => {
+    const c = (window as any).art.editor.doc.activeCel;
+    const set = new Set<number>();
+    let whites = 0;
+    for (let y = 0; y < 4; y++)
+      for (let x = 0; x < 16; x++) {
+        const p = c.getPixel(x, y);
+        set.add(p[0]);
+        if (p[0] === 255) whites++;
+      }
+    return { values: [...set].sort((a, b) => a - b), whites };
+  });
+  expect(colors.values).toEqual([0, 255]);
+  expect(colors.whites).toBeGreaterThan(24);
+  expect(colors.whites).toBeLessThan(40);
+  await page.keyboard.press('Control+z');
+  // With a selection only the selected pixels change.
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    const m = new Uint8Array(64);
+    m.fill(255, 0, 16);
+    e.applySelection(m, { x: 0, y: 0, w: 16, h: 1 }, 'replace', 'Select');
+  });
+  await drag();
+  expect((await layerPixel(page, 15, 0))[3]).toBe(255);
+  expect(await layerPixel(page, 15, 1)).toEqual([0, 0, 0, 0]);
+});
+
+test('palette lock, map to palette, select by color and feather', async ({ page }) => {
+  await newImage(page, 8, 8, 'white');
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    e.setPalette([
+      { r: 0, g: 0, b: 0, a: 255 },
+      { r: 255, g: 255, b: 255, a: 255 },
+      { r: 200, g: 0, b: 0, a: 255 },
+    ]);
+  });
+  await menu(page, 'Image', 'Lock colors to palette');
+  // Picking an off-palette color snaps it.
+  await setFg(page, '#e01010');
+  expect(await page.evaluate(() => (window as any).art.editor.fg)).toEqual({ r: 200, g: 0, b: 0, a: 255 });
+  await selectTool(page, 'b');
+  await page.evaluate(() => (window as any).art.editor.setOption('brush', 'opacity', 0.5));
+  await drawMouse(page, [[3, 3]]);
+  const painted = await layerPixel(page, 3, 3);
+  expect([
+    [0, 0, 0],
+    [255, 255, 255],
+    [200, 0, 0],
+  ]).toContainEqual(painted.slice(0, 3));
+  await menu(page, 'Image', 'Lock colors to palette');
+  // Off-palette pixels → palette.
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    e.doc.activeCel.ensureData().set([30, 30, 30, 255], 0);
+  });
+  await menu(page, 'Image', 'Map colors to palette…');
+  await page.locator('dialog.dialog').getByRole('button', { name: 'Map colors' }).click();
+  expect(await layerPixel(page, 0, 0)).toEqual([0, 0, 0, 255]);
+  // Select every white pixel, then feather.
+  await menu(page, 'Select', 'Select by color…');
+  const dialog = page.locator('dialog.dialog');
+  await dialog.getByLabel('Color', { exact: true }).fill('#ffffff');
+  await dialog.getByRole('button', { name: 'Select', exact: true }).click();
+  const sel = await page.evaluate(() => (window as any).art.editor.doc.selection.valueAt(7, 7));
+  expect(sel).toBe(255);
+  expect(await page.evaluate(() => (window as any).art.editor.doc.selection.valueAt(0, 0))).toBe(0);
+  await menu(page, 'Select', 'Feather selection…');
+  await dialog.getByLabel('Radius (px)').fill('3');
+  await dialog.getByRole('button', { name: 'Feather' }).click();
+  const soft = await page.evaluate(() => (window as any).art.editor.doc.selection.valueAt(1, 0));
+  expect(soft).toBeGreaterThan(0);
+  expect(soft).toBeLessThan(255);
+});

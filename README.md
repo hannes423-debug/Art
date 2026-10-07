@@ -32,6 +32,8 @@ fast and canvas-first.
 - Eraser (hard-pixel or soft) that erases to true transparency
 - Line (Shift snaps to pixel-art angles 1:1, 2:1, 1:2), rectangle and ellipse (outline/filled, optional anti-aliasing)
 - Fill bucket with tolerance, contiguous/global, and "sample all layers"
+- Gradient tool (Shift+G): linear or radial, foreground → background or → transparent, optional ordered dithering for the classic pixel-art look
+- Shading tool (K): each stroke moves pixels one step along the palette (right-click: the other way), each pixel at most once per stroke
 - Color picker (Alt+click in paint tools), right mouse button paints with the background color
 - Shift+click draws a straight line from the last stroke
 - Symmetry: mirror brush, pencil and eraser strokes left ↔ right, top ↔ bottom or both, around a movable axis (Alt+X, Alt+Y)
@@ -39,7 +41,7 @@ fast and canvas-first.
 
 **Selection & transform**
 - Rectangle, ellipse and lasso selection; magic wand. Replace/add/subtract/intersect (Shift/Alt)
-- Grow, shrink and border selections (round or square, any radius); Ctrl+Alt+= / Ctrl+Alt+- grow or shrink by 1px. Select layer content → 1px outside border → fill outlines a sprite
+- Select by color, feather selection, grow, shrink and border selections (round or square, any radius); Ctrl+Alt+= / Ctrl+Alt+- grow or shrink by 1px. Select layer content → 1px outside border → fill outlines a sprite
 - Move tool with floating selections: drag or nudge with arrow keys without destroying what is underneath, then apply or cancel
 - Cut, copy, copy merged, paste (as a floating selection or a new layer), including images from the system clipboard
 - Crop to selection, trim transparent edges, canvas size with anchor, scale image (nearest neighbour or smooth), flip and rotate
@@ -58,6 +60,7 @@ fast and canvas-first.
 - Replace color (Shift+R) on one layer or all layers and frames, with tolerance; color → transparent works too
 - Sprite sheet import (slice by cell size, offset and gap) and export (strip or grid, with padding and frame-data JSON)
 - Export scaled up 2×–16× without blurring
+- Palette lock: every painted color (including brush blending and gradients) snaps to the palette; Map colors to palette (with optional dithering) converts existing art
 - Palettes: DawnBringer 32, PICO-8, Game Boy, grayscale; import GIMP `.gpl`, `.hex` and JASC `.pal`; export `.gpl` and `.hex`; extract colors from a layer
 
 **Color**
@@ -91,7 +94,7 @@ Open the app, pick a size (or open an image) and draw.
 | Tool options | Options bar under the menu | Slider strip above the tools; tap the active tool for all options |
 
 Common shortcuts: **B** brush, **P** pencil, **E** eraser, **L** line, **U**
-rectangle, **O** ellipse, **G** fill, **I** picker, **S** select, **Q** lasso,
+rectangle, **O** ellipse, **G** fill, **I** picker, **K** shading, **Shift+G** gradient, **S** select, **Q** lasso,
 **W** magic wand, **M**/**V** move, **H** hand, **X** swap colors, **D** default
 colors, **[ ]** brush size, **Ctrl+S** save, **Ctrl+O** open, **Ctrl+E**
 export, **Ctrl+Shift+S** save project file, **Tab** canvas only, **F** fullscreen.
@@ -226,8 +229,7 @@ rules (no ads, tracking or paywalls; no dead buttons; exact pixels).
 ## Roadmap
 
 Next steps being considered: a layer/frame timeline with per-cel linking and
-tags, more blend modes, layer groups, text, gradients, palette
-locking/indexed mode, and moving PNG encoding to a worker for very large
+tags, more blend modes, layer groups, text, and moving PNG encoding to a worker for very large
 images.
 
 ## License

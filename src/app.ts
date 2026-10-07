@@ -16,9 +16,11 @@ import {
   gridDialog,
   newImageDialog,
   projectsDialog,
+  mapToPaletteDialog,
   modifySelectionDialog,
   replaceColorDialog,
   scaleImageDialog,
+  selectColorDialog,
   settingsDialog,
   symmetryAxisDialog,
   shortcutsDialog,
@@ -98,7 +100,11 @@ export class App {
     // --- components
     this.toolbar = new Toolbar(e);
     this.optionsBar = new OptionsBar(e);
-    this.colorPanel = new ColorPanel(e, { importPalette: () => void this.files.importPalette(), exportPalette: (f) => void this.files.exportPalette(f) });
+    this.colorPanel = new ColorPanel(e, {
+      importPalette: () => void this.files.importPalette(),
+      exportPalette: (f) => void this.files.exportPalette(f),
+      showMapToPalette: () => this.showMapToPalette(),
+    });
     this.layersPanel = new LayersPanel(e);
     this.timeline = new Timeline(e);
     this.statusbar = new StatusBar(e);
@@ -646,6 +652,14 @@ export class App {
 
   showCanvasSize(): void {
     canvasSizeDialog(this);
+  }
+
+  showMapToPalette(): void {
+    mapToPaletteDialog(this);
+  }
+
+  showSelectColor(): void {
+    selectColorDialog(this);
   }
 
   showReplaceColor(): void {

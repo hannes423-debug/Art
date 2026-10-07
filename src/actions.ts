@@ -137,10 +137,12 @@ export const MENUS: MenuDef[] = [
       'select.none',
       'select.invert',
       'select.alpha',
+      'select.color',
       '-',
       'select.grow',
       'select.shrink',
       'select.border',
+      'select.feather',
       'select.grow1',
       'select.shrink1',
       '-',
@@ -156,6 +158,9 @@ export const MENUS: MenuDef[] = [
       '-',
       'image.cropSel',
       'image.trim',
+      '-',
+      'image.toPalette',
+      'colors.lockPalette',
       '-',
       'image.flipH',
       'image.flipV',
@@ -243,10 +248,12 @@ const TOOL_KEYS: [ToolId, string[]][] = [
   ['brush', ['b']],
   ['pencil', ['p']],
   ['eraser', ['e']],
+  ['shade', ['k']],
   ['line', ['l']],
   ['rect', ['u']],
   ['ellipse', ['o']],
   ['fill', ['g']],
+  ['gradient', ['shift+g']],
   ['picker', ['i']],
   ['select-rect', ['s']],
   ['lasso', ['q']],
@@ -331,6 +338,8 @@ export function createActions(app: App): ActionRegistry {
     { id: 'select.grow', label: 'Grow selection…', run: () => app.showModifySelection('grow'), enabled: hasSel },
     { id: 'select.shrink', label: 'Shrink selection…', run: () => app.showModifySelection('shrink'), enabled: hasSel },
     { id: 'select.border', label: 'Border selection…', run: () => app.showModifySelection('border'), enabled: hasSel },
+    { id: 'select.feather', label: 'Feather selection…', run: () => app.showModifySelection('feather'), enabled: hasSel },
+    { id: 'select.color', label: 'Select by color…', run: () => app.showSelectColor() },
     {
       id: 'select.grow1',
       label: 'Grow by 1px',
@@ -351,6 +360,13 @@ export function createActions(app: App): ActionRegistry {
     { id: 'image.scale', label: 'Scale image…', run: () => app.showScaleImage() },
     { id: 'image.cropSel', label: 'Crop to selection', icon: 'crop', run: () => cropTo(doc(), hist(), doc().selection.bounds!), enabled: hasSel },
     { id: 'image.trim', label: 'Trim transparent edges', run: () => trimImage(doc(), hist()) || e.toast('The image is empty') },
+    { id: 'image.toPalette', label: 'Map colors to palette…', run: () => app.showMapToPalette() },
+    {
+      id: 'colors.lockPalette',
+      label: 'Lock colors to palette',
+      run: () => e.setPaletteLock(!e.settings.paletteLock),
+      checked: () => e.settings.paletteLock,
+    },
     { id: 'image.flipH', label: 'Flip image horizontally', run: () => flipImage(doc(), hist(), true) },
     { id: 'image.flipV', label: 'Flip image vertically', run: () => flipImage(doc(), hist(), false) },
     { id: 'image.rotateCW', label: 'Rotate 90° clockwise', run: () => rotateImage(doc(), hist(), 'cw') },
@@ -450,7 +466,7 @@ export function createActions(app: App): ActionRegistry {
       run: () => {
         const m = e.options.symmetry.mode;
         e.setSymmetry({ mode: m === 'x' ? 'off' : m === 'y' ? 'xy' : m === 'xy' ? 'y' : 'x' });
-        if (e.options.symmetry.mode !== 'off' && !['brush', 'pencil', 'eraser'].includes(e.tool.id)) e.setTool('pencil');
+        if (e.options.symmetry.mode !== 'off' && !e.toolUsesSymmetry()) e.setTool('pencil');
       },
       checked: () => e.options.symmetry.mode === 'x' || e.options.symmetry.mode === 'xy',
     },
@@ -461,7 +477,7 @@ export function createActions(app: App): ActionRegistry {
       run: () => {
         const m = e.options.symmetry.mode;
         e.setSymmetry({ mode: m === 'y' ? 'off' : m === 'x' ? 'xy' : m === 'xy' ? 'x' : 'y' });
-        if (e.options.symmetry.mode !== 'off' && !['brush', 'pencil', 'eraser'].includes(e.tool.id)) e.setTool('pencil');
+        if (e.options.symmetry.mode !== 'off' && !e.toolUsesSymmetry()) e.setTool('pencil');
       },
       checked: () => e.options.symmetry.mode === 'y' || e.options.symmetry.mode === 'xy',
     },

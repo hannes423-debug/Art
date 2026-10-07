@@ -242,3 +242,27 @@ export function floodFill(
   }
   return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
 }
+
+/** 8×8 Bayer matrix for ordered dithering (values 0..63). */
+const BAYER8 = (() => {
+  const m = [
+    [0, 2],
+    [3, 1],
+  ];
+  let cur = m;
+  while (cur.length < 8) {
+    const n = cur.length;
+    const next: number[][] = [];
+    for (let y = 0; y < n * 2; y++) {
+      next.push([]);
+      for (let x = 0; x < n * 2; x++) next[y].push(4 * cur[y % n][x % n] + m[Math.floor(y / n)][Math.floor(x / n)]);
+    }
+    cur = next;
+  }
+  return cur;
+})();
+
+/** Ordered-dither threshold in 0..1 for pixel (x, y). */
+export function bayerThreshold(x: number, y: number): number {
+  return (BAYER8[y & 7][x & 7] + 0.5) / 64;
+}

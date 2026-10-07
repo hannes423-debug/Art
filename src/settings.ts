@@ -24,6 +24,8 @@ export interface Settings {
   sidePanel: boolean;
   /** Tile preview: repeat the image around itself; drawing wraps across edges. */
   tileMode: 'off' | 'both' | 'x' | 'y';
+  /** Snap every painted color to the nearest palette color. */
+  paletteLock: boolean;
 }
 
 export function defaultSettings(): Settings {
@@ -41,6 +43,7 @@ export function defaultSettings(): Settings {
     showTimeline: false,
     sidePanel: true,
     tileMode: 'off',
+    paletteLock: false,
   };
 }
 

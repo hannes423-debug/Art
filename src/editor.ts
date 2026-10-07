@@ -3,7 +3,7 @@ import { ArtDocument } from './core/document';
 import { Emitter } from './core/emitter';
 import { History } from './core/history';
 import { type PaintParams, PaintSession } from './core/paint';
-import { presetColors } from './core/palette';
+import { nearestColorFinder, presetColors } from './core/palette';
 import type { SelectionMode, SelectionModify } from './core/selection';
 import { type ClipImage, addLayer, changeSelection, clearPixels, copyPixels } from './ops';
 import { Renderer } from './render/renderer';
@@ -11,6 +11,7 @@ import { Viewport } from './render/viewport';
 import { type Settings, loadState, saveState } from './settings';
 import { MoveSession } from './tools/move-session';
 import { EllipseSelectTool, FillTool, HandTool, LassoTool, MoveTool, PickerTool, RectSelectTool, WandTool } from './tools/other-tools';
+import { GradientTool, ShadeTool } from './tools/extra-tools';
 import { BrushTool, EraserTool, PencilTool, type SymmetryAxes } from './tools/paint-tools';
 import { EllipseTool, LineTool, RectTool } from './tools/shape-tools';
 import type { Tool, ToolId, ToolOptions } from './tools/tool';
@@ -99,10 +100,12 @@ export class Editor extends Emitter<EditorEvents> {
       brush: new BrushTool(this),
       pencil: new PencilTool(this),
       eraser: new EraserTool(this),
+      shade: new ShadeTool(this),
       line: new LineTool(this),
       rect: new RectTool(this),
       ellipse: new EllipseTool(this),
       fill: new FillTool(this),
+      gradient: new GradientTool(this),
       picker: new PickerTool(this),
       'select-rect': new RectSelectTool(this),
       'select-ellipse': new EllipseSelectTool(this),
@@ -191,7 +194,7 @@ export class Editor extends Emitter<EditorEvents> {
   // --------------------------------------------------------------- Colors
 
   setColor(which: 'fg' | 'bg', c: RGBA): void {
-    this[which] = { ...c };
+    this[which] = this.snapColor(c);
     this.emit('colors');
     this.persist();
   }
@@ -218,8 +221,38 @@ export class Editor extends Emitter<EditorEvents> {
 
   setPalette(colors: RGBA[]): void {
     this.palette = colors.map((c) => ({ ...c }));
+    this.snapFinder = null;
     this.emit('palette');
     this.persist();
+  }
+
+  // --------------------------------------------------------- Palette lock
+
+  private snapFinder: ((r: number, g: number, b: number) => number) | null = null;
+
+  /** Nearest-palette mapping while palette lock is on (null otherwise or with an empty palette). */
+  paletteSnap(): ((r: number, g: number, b: number) => number) | null {
+    if (!this.settings.paletteLock || !this.palette.length) return null;
+    if (!this.snapFinder) this.snapFinder = nearestColorFinder(this.palette);
+    return this.snapFinder;
+  }
+
+  /** The color itself, or its nearest palette color (same alpha) while palette lock is on. */
+  snapColor(c: RGBA): RGBA {
+    const snap = this.paletteSnap();
+    if (!snap) return { ...c };
+    const p = snap(c.r, c.g, c.b);
+    return { r: p >> 16, g: (p >> 8) & 255, b: p & 255, a: c.a };
+  }
+
+  setPaletteLock(on: boolean): void {
+    this.updateSettings({ paletteLock: on });
+    if (on) {
+      if (!this.palette.length) this.toast('The palette is empty: add colors to lock to.');
+      this.fg = this.snapColor(this.fg);
+      this.bg = this.snapColor(this.bg);
+      this.emit('colors');
+    }
   }
 
   // ------------------------------------------------------------- Painting
@@ -236,7 +269,8 @@ export class Editor extends Emitter<EditorEvents> {
   beginPaint(params: PaintParams): PaintSession {
     this.commitFloating();
     this.stop();
-    const session = new PaintSession(this.doc, this.doc.activeCel, params);
+    const snap = params.mode === 'paint' ? this.paletteSnap() : null;
+    const session = new PaintSession(this.doc, this.doc.activeCel, snap ? { ...params, snap } : params);
     const t = this.tileWrap();
     session.wrapX = t.x;
     session.wrapY = t.y;
@@ -264,6 +298,11 @@ export class Editor extends Emitter<EditorEvents> {
     return Math.round(v * 2) / 2;
   }
 
+  /** Freehand tools mirror their strokes when symmetry is on. */
+  toolUsesSymmetry(id: ToolId = this.tool.id): boolean {
+    return id === 'brush' || id === 'pencil' || id === 'eraser' || id === 'shade';
+  }
+
   /** Active mirror axes for freehand tools, or null when symmetry is off. */
   symmetryAxes(): SymmetryAxes | null {
     const s = this.options.symmetry;
@@ -284,7 +323,7 @@ export class Editor extends Emitter<EditorEvents> {
 
   private drawSymmetryAxes(ctx: CanvasRenderingContext2D, view: Viewport): void {
     const axes = this.symmetryAxes();
-    if (!axes || !['brush', 'pencil', 'eraser'].includes(this.tool.id)) return;
+    if (!axes || !this.toolUsesSymmetry()) return;
     const { width: w, height: h } = this.doc;
     const lines: [number, number, number, number][] = [];
     if (axes.x !== null) lines.push([axes.x, 0, axes.x, h]);
@@ -340,7 +379,7 @@ export class Editor extends Emitter<EditorEvents> {
   modifySelection(m: SelectionModify): void {
     this.commitFloating();
     if (!this.doc.selection.active) return;
-    const labels = { grow: 'Grow selection', shrink: 'Shrink selection', border: 'Border selection' };
+    const labels = { grow: 'Grow selection', shrink: 'Shrink selection', border: 'Border selection', feather: 'Feather selection' };
     changeSelection(this.doc, this.history, labels[m.kind], () => this.doc.selection.modify(m));
     if (!this.doc.selection.active) this.toast('The selection is now empty');
   }

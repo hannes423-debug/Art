@@ -14,6 +14,8 @@ export interface PaintParams {
   mode: PaintMode;
   /** Keep existing alpha; only recolor (paint) / do nothing (erase). */
   alphaLock: boolean;
+  /** Palette lock: every resulting color is snapped to the nearest palette color (packed RGB). */
+  snap?: (r: number, g: number, b: number) => number;
 }
 
 let scratch: Uint8Array | null = null;
@@ -328,6 +330,21 @@ export class PaintSession {
         }
       }
     });
+    const snap = this.params.snap;
+    if (snap && mode === 'paint') {
+      // Blending creates in-between colors; map them back onto the palette.
+      for (let y = r.y; y < r.y + r.h; y++) {
+        for (let o = (y * w + r.x) * 4, x = 0; x < r.w; x++, o += 4) {
+          const p = y * w + r.x + x;
+          // Only pixels this edit actually changed.
+          if (data[o + 3] === 0 || mask[p] === 0 || (sel && sel[p] === 0)) continue;
+          const c = snap(data[o], data[o + 1], data[o + 2]);
+          data[o] = c >> 16;
+          data[o + 1] = (c >> 8) & 255;
+          data[o + 2] = c & 255;
+        }
+      }
+    }
     this.surface.touch(r);
     this.doc.notifyPixels(this.surface, r);
   }

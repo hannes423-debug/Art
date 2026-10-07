@@ -11,18 +11,18 @@ interface Slot {
 }
 
 const DESKTOP_GROUPS: ToolId[][] = [
-  ['brush', 'pencil', 'eraser'],
+  ['brush', 'pencil', 'eraser', 'shade'],
   ['line', 'rect', 'ellipse'],
-  ['fill', 'picker'],
+  ['fill', 'gradient', 'picker'],
   ['select-rect', 'select-ellipse', 'lasso', 'wand'],
   ['move', 'hand'],
 ];
 
 const MOBILE_SLOTS: Slot[] = [
   { tools: ['brush'] },
-  { tools: ['pencil'] },
+  { tools: ['pencil', 'shade'] },
   { tools: ['eraser'] },
-  { tools: ['fill'] },
+  { tools: ['fill', 'gradient'] },
   { tools: ['picker'] },
   { tools: ['line', 'rect', 'ellipse'] },
   { tools: ['select-rect', 'select-ellipse', 'lasso', 'wand'] },

@@ -7,6 +7,7 @@ import { type PopupItem, popupMenu } from './menu';
 export interface PaletteIO {
   importPalette(): void;
   exportPalette(format: 'gpl' | 'hex'): void;
+  showMapToPalette(): void;
 }
 
 /**
@@ -272,6 +273,13 @@ export class ColorPanel {
   private paletteMenuItems(): (PopupItem | '-')[] {
     const e = this.editor;
     return [
+      {
+        label: 'Lock colors to palette',
+        checked: e.settings.paletteLock,
+        run: () => e.setPaletteLock(!e.settings.paletteLock),
+      },
+      { label: 'Map image colors to palette…', run: () => this.io.showMapToPalette() },
+      '-',
       ...PALETTE_PRESETS.map((p) => ({ label: `Load ${p.name}`, run: () => e.setPalette(presetColors(p.name)) })),
       '-',
       {

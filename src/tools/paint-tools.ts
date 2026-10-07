@@ -18,7 +18,7 @@ export interface SymmetryAxes {
 }
 
 /** All mirror images of a point (the point itself first). */
-function mirrorPoints(x: number, y: number, axes: SymmetryAxes | null, flipX: (v: number) => number, flipY: (v: number) => number): [number, number][] {
+export function mirrorPoints(x: number, y: number, axes: SymmetryAxes | null, flipX: (v: number) => number, flipY: (v: number) => number): [number, number][] {
   const out: [number, number][] = [[x, y]];
   if (!axes) return out;
   if (axes.x !== null) out.push([flipX(x), y]);

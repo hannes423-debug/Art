@@ -1,5 +1,5 @@
 import { type Rect, clipRect, unionRect } from './geometry';
-import { type MorphShape, growMask, shrinkMask, subtractMask } from './morphology';
+import { type MorphShape, featherMask, growMask, shrinkMask, subtractMask } from './morphology';
 
 export type SelectionMode = 'replace' | 'add' | 'subtract' | 'intersect';
 
@@ -8,7 +8,9 @@ export type SelectionModify =
   | { kind: 'grow'; radius: number; shape: MorphShape }
   | { kind: 'shrink'; radius: number; shape: MorphShape; fromCanvasEdge: boolean }
   /** A ring of `radius` pixels just outside (or just inside) the selection edge. */
-  | { kind: 'border'; radius: number; shape: MorphShape; side: 'outside' | 'inside' };
+  | { kind: 'border'; radius: number; shape: MorphShape; side: 'outside' | 'inside' }
+  /** Softens the edge over about `radius` pixels on each side. */
+  | { kind: 'feather'; radius: number };
 
 /** Serializable snapshot of a selection (mask cropped to its bounds). */
 export interface SelectionState {
@@ -76,7 +78,10 @@ export class Selection {
     const { width: w, height: h } = this;
     let next: Uint8Array;
     let hint: Rect;
-    if (m.kind === 'grow') {
+    if (m.kind === 'feather') {
+      next = featherMask(mask, w, h, b, r);
+      hint = { x: b.x - r, y: b.y - r, w: b.w + 2 * r, h: b.h + 2 * r };
+    } else if (m.kind === 'grow') {
       next = growMask(mask, w, h, b, r, m.shape);
       hint = { x: b.x - r, y: b.y - r, w: b.w + 2 * r, h: b.h + 2 * r };
     } else if (m.kind === 'shrink') {

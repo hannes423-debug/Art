@@ -186,3 +186,45 @@ export function subtractMask(a: Uint8Array, b: Uint8Array): Uint8Array {
   }
   return out;
 }
+
+/**
+ * Softens the selection edge: three box blurs approximate a Gaussian whose
+ * transition spans about `r` pixels on each side of the original edge.
+ */
+export function featherMask(mask: Uint8Array, width: number, height: number, bounds: Rect, r: number): Uint8Array {
+  const b = Math.max(1, Math.round(r / 3));
+  const region = clipRect({ x: bounds.x - 3 * b, y: bounds.y - 3 * b, w: bounds.w + 6 * b, h: bounds.h + 6 * b }, width, height);
+  if (!region) return mask.slice();
+  const { x: rx, y: ry, w, h } = region;
+  let cur = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) cur[y * w + x] = mask[(ry + y) * width + rx + x];
+  let tmp = new Float32Array(w * h);
+  // Where the region ends at the canvas edge, the edge pixels extend outward
+  // (a selection reaching the edge stays solid there); elsewhere it is unselected.
+  const clampLo = [rx === 0, ry === 0];
+  const clampHi = [rx + w === width, ry + h === height];
+  const pass = (src: Float32Array, dst: Float32Array, horizontal: boolean) => {
+    const n = horizontal ? w : h;
+    const lines = horizontal ? h : w;
+    const axis = horizontal ? 0 : 1;
+    const win = 2 * b + 1;
+    for (let l = 0; l < lines; l++) {
+      const get = (i: number) => (horizontal ? src[l * w + i] : src[i * w + l]);
+      const at = (i: number) => (i < 0 ? (clampLo[axis] ? get(0) : 0) : i >= n ? (clampHi[axis] ? get(n - 1) : 0) : get(i));
+      let sum = 0;
+      for (let i = -b; i <= b; i++) sum += at(i);
+      for (let i = 0; i < n; i++) {
+        if (horizontal) dst[l * w + i] = sum / win;
+        else dst[i * w + l] = sum / win;
+        sum += at(i + b + 1) - at(i - b);
+      }
+    }
+  };
+  for (let k = 0; k < 3; k++) {
+    pass(cur, tmp, true);
+    pass(tmp, cur, false);
+  }
+  const out = mask.slice();
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) out[(ry + y) * width + rx + x] = Math.round(cur[y * w + x]);
+  return out;
+}

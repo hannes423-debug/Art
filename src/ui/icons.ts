@@ -8,6 +8,9 @@ export const ICONS = {
   pencil:
     '<path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>',
   eraser: '<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
+  shade: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>',
+  gradient:
+    '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18" stroke-dasharray="1.5 2.5"/><path d="M11 3v18" stroke-dasharray="1 4"/><path d="M15 3v18" stroke-dasharray="2.5 1.5"/><path d="M19 3v18"/>',
   line: '<path d="M5 19 19 5"/><circle cx="5" cy="19" r="1.5" fill="currentColor"/><circle cx="19" cy="5" r="1.5" fill="currentColor"/>',
   rect: '<rect x="4" y="5" width="16" height="14" rx="1"/>',
   ellipse: '<ellipse cx="12" cy="12" rx="9" ry="7.5"/>',
