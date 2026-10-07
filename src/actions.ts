@@ -264,6 +264,7 @@ const TOOL_KEYS: [ToolId, string[]][] = [
   ['ellipse', ['o']],
   ['fill', ['g']],
   ['gradient', ['shift+g']],
+  ['text', ['t']],
   ['picker', ['i']],
   ['select-rect', ['s']],
   ['lasso', ['q']],

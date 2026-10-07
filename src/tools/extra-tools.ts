@@ -456,3 +456,28 @@ export class GradientTool extends Tool {
     }
   }
 }
+
+/**
+ * Text: click where the text should start; a dialog asks for the text and
+ * style, and the result becomes a floating selection that can be moved
+ * (or transformed) before it is applied.
+ */
+export class TextTool extends Tool {
+  readonly id: ToolId = 'text';
+  readonly label = 'Text';
+  override readonly shortcut = 'T';
+  override readonly optionsKey = 'text';
+  override cursor = 'text';
+  /** Set by the app: opens the text dialog for a document position. */
+  onPlace: (x: number, y: number) => void = () => {};
+
+  override down(p: ToolPointer): void {
+    const e = this.editor;
+    e.commitFloating();
+    if (!e.doc.activeLayer.visible && !e.options.text.newLayer) {
+      e.canEditPixels();
+      return;
+    }
+    this.onPlace(Math.floor(p.x), Math.floor(p.y));
+  }
+}

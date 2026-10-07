@@ -35,6 +35,7 @@ fast and canvas-first.
 - Gradient tool (Shift+G): linear or radial, foreground → background or → transparent, optional ordered dithering for the classic pixel-art look
 - Shading tool (K): each stroke moves pixels one step along the palette (right-click: the other way), each pixel at most once per stroke
 - Color picker (Alt+click in paint tools), right mouse button paints with the background color
+- Text tool (T): a built-in crisp 5×7 pixel font (scalable 1×–8×) or system fonts with or without anti-aliasing; text lands as a floating selection (on its own layer if you like) to move or transform
 - Shift+click draws a straight line from the last stroke
 - Symmetry: mirror brush, pencil and eraser strokes left ↔ right, top ↔ bottom or both, around a movable axis (Alt+X, Alt+Y)
 - Uniform stroke opacity: overlapping dabs inside one stroke never get darker
@@ -101,7 +102,7 @@ Open the app, pick a size (or open an image) and draw.
 | Tool options | Options bar under the menu | Slider strip above the tools; tap the active tool for all options |
 
 Common shortcuts: **B** brush, **P** pencil, **E** eraser, **L** line, **U**
-rectangle, **O** ellipse, **G** fill, **I** picker, **K** shading, **Shift+G** gradient, **S** select, **Q** lasso,
+rectangle, **O** ellipse, **G** fill, **I** picker, **K** shading, **Shift+G** gradient, **T** text, **S** select, **Q** lasso,
 **W** magic wand, **M**/**V** move, **H** hand, **X** swap colors, **D** default
 colors, **[ ]** brush size, **Ctrl+S** save, **Ctrl+O** open, **Ctrl+E**
 export, **Ctrl+Shift+S** save project file, **Tab** canvas only, **F** fullscreen.

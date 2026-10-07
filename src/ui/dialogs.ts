@@ -7,6 +7,7 @@ import { canShareFile } from '../io/files';
 import type { ProjectMeta } from '../io/storage';
 import { colorMask, mapToPalette, replaceColor, resizeCanvas, scaleImage, setTags } from '../ops';
 import type { TouchMode } from '../settings';
+import { type TextFont, type TextStyle, renderText } from '../tools/text-render';
 import { checkbox, confirmDialog, field, numberInput, openDialog, readNumber, selectInput } from './dialog';
 import { formatShortcut, h, icon } from './dom';
 
@@ -569,6 +570,126 @@ export function tagDialog(app: App, index: number | null): void {
       { label: existing ? 'Save' : 'Add tag', primary: true, onClick: save },
     ],
   });
+}
+
+// ---------------------------------------------------------------------- Text
+
+export function textDialog(app: App, x: number, y: number): void {
+  const e = app.editor;
+  const o = e.options.text;
+  const text = h('textarea', { class: 'input text-input', rows: '3', 'aria-label': 'Text', spellcheck: 'false', placeholder: 'Type here…' });
+  const font = selectInput(
+    [
+      { value: 'pixel', label: 'Pixel 5×7 (crisp, built in)' },
+      { value: 'sans-serif', label: 'Sans-serif' },
+      { value: 'serif', label: 'Serif' },
+      { value: 'monospace', label: 'Monospace' },
+    ],
+    o.font,
+  );
+  const scale = selectInput(
+    [1, 2, 3, 4, 6, 8].map((v) => ({ value: String(v), label: `${v}×` })),
+    String(o.pixelScale),
+  );
+  const size = numberInput(o.size, 4, 400);
+  const bold = checkbox('Bold', o.bold);
+  const aa = checkbox('Smooth edges (anti-aliasing)', o.antialias);
+  const align = selectInput(
+    [
+      { value: 'left', label: 'Left' },
+      { value: 'center', label: 'Center' },
+      { value: 'right', label: 'Right' },
+    ],
+    o.align,
+  );
+  const newLayer = checkbox('Put the text on a new layer', o.newLayer);
+  const scaleField = field('Scale', scale);
+  const sizeField = field('Size (px)', size);
+  const vectorOpts = h('div', { class: 'row' }, bold.el, aa.el);
+  const preview = h('canvas', { class: 'text-preview', 'aria-label': 'Preview' });
+  const style = (): TextStyle => ({
+    font: font.value as TextFont,
+    size: font.value === 'pixel' ? Number(scale.value) : readNumber(size, 4, 400, 16),
+    bold: bold.input.checked,
+    antialias: aa.input.checked,
+    align: align.value as TextStyle['align'],
+  });
+  const update = () => {
+    const pixel = font.value === 'pixel';
+    scaleField.hidden = !pixel;
+    sizeField.hidden = pixel;
+    vectorOpts.hidden = pixel;
+    const img = renderText(text.value || 'Text', style(), e.fg);
+    const ctx = preview.getContext('2d')!;
+    const W = 320;
+    const H = 110;
+    preview.width = W;
+    preview.height = H;
+    ctx.fillStyle = '#2c2f33';
+    ctx.fillRect(0, 0, W, H);
+    if (!img) return;
+    const k = Math.max(
+      0.1,
+      Math.min(8, Math.floor(Math.min((W - 16) / img.width, (H - 16) / img.height)) || Math.min((W - 16) / img.width, (H - 16) / img.height)),
+    );
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    c.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
+    ctx.imageSmoothingEnabled = k < 1;
+    ctx.drawImage(c, (W - img.width * k) / 2, (H - img.height * k) / 2, img.width * k, img.height * k);
+  };
+  for (const el of [text, font, scale, size, align, bold.input, aa.input]) el.addEventListener('input', update);
+  update();
+  openDialog({
+    title: 'Text',
+    content: [
+      field('Text', text),
+      h('div', { class: 'row' }, field('Font', font), scaleField, sizeField),
+      vectorOpts,
+      field('Align', align),
+      newLayer.el,
+      preview,
+      h('p', { class: 'field-hint' }, 'The text appears as a floating selection in the foreground color: drag to place it, Enter to apply.'),
+    ],
+    buttons: [
+      { label: 'Cancel' },
+      {
+        label: 'Place text',
+        primary: true,
+        onClick: () => {
+          const st = style();
+          Object.assign(e.options.text, {
+            font: st.font,
+            pixelScale: Number(scale.value),
+            size: readNumber(size, 4, 400, 16),
+            bold: st.bold,
+            antialias: st.antialias,
+            align: st.align,
+            newLayer: newLayer.input.checked,
+          });
+          e.persist();
+          const img = renderText(text.value, st, e.fg);
+          if (!img) {
+            e.toast('Type some text first');
+            return false;
+          }
+          e.paste(
+            { width: img.width, height: img.height, data: img.data, x, y },
+            newLayer.input.checked,
+            newLayer.input.checked ? textLayerName(text.value) : undefined,
+            true,
+          );
+          if (e.fg.a > 0) e.addRecent(e.fg);
+        },
+      },
+    ],
+  });
+}
+
+function textLayerName(t: string): string {
+  const first = t.trim().split('\n')[0];
+  return first.length > 24 ? `${first.slice(0, 23)}…` : first || 'Text';
 }
 
 // ------------------------------------------------------------- Symmetry axis

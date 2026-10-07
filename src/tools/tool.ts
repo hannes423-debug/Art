@@ -12,6 +12,7 @@ export type ToolId =
   | 'ellipse'
   | 'fill'
   | 'gradient'
+  | 'text'
   | 'picker'
   | 'select-rect'
   | 'select-ellipse'
@@ -117,6 +118,15 @@ export interface ToolOptions {
   symmetry: { mode: 'off' | 'x' | 'y' | 'xy'; x: number; y: number };
   shade: { size: number; direction: 'next' | 'prev'; round: boolean };
   gradient: { shape: 'linear' | 'radial'; to: 'bg' | 'transparent'; dither: boolean; opacity: number };
+  text: {
+    font: 'pixel' | 'sans-serif' | 'serif' | 'monospace';
+    pixelScale: number;
+    size: number;
+    bold: boolean;
+    antialias: boolean;
+    align: 'left' | 'center' | 'right';
+    newLayer: boolean;
+  };
 }
 
 export function defaultToolOptions(): ToolOptions {
@@ -132,6 +142,7 @@ export function defaultToolOptions(): ToolOptions {
     symmetry: { mode: 'off', x: -1, y: -1 },
     shade: { size: 1, direction: 'next', round: false },
     gradient: { shape: 'linear', to: 'bg', dither: false, opacity: 1 },
+    text: { font: 'pixel', pixelScale: 1, size: 16, bold: false, antialias: false, align: 'left', newLayer: true },
   };
 }
 

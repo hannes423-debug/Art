@@ -579,3 +579,51 @@ test('free transform: scale and rotate with handles, apply and undo', async ({ p
   expect(await layerPixel(page, 11, 11)).toEqual([255, 0, 0, 255]);
   expect(await layerPixel(page, 12, 12)).toEqual([0, 0, 0, 0]);
 });
+
+test('text tool places pixel-font and system-font text as a movable floating selection', async ({ page }) => {
+  await newImage(page, 48, 24);
+  await setFg(page, '#ff0000');
+  await page.keyboard.press('t');
+  expect(await page.evaluate(() => (window as any).art.editor.tool.id)).toBe('text');
+  await drawMouse(page, [[2, 3]]);
+  const dialog = page.locator('dialog.dialog');
+  await dialog.getByLabel('Text', { exact: true }).fill('Hi');
+  await expect(dialog.locator('canvas.text-preview')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Place text' }).click();
+  // On a new layer named after the text, floating at the click point.
+  expect(await page.evaluate(() => (window as any).art.editor.doc.activeLayer.name)).toBe('Hi');
+  expect(await page.evaluate(() => (window as any).art.editor.tool.id)).toBe('move');
+  // 'H' left column starts at (2,3); 'i' dot at (2+8, 3).
+  expect(await layerPixel(page, 2, 3)).toEqual([255, 0, 0, 255]);
+  expect(await layerPixel(page, 2, 9)).toEqual([255, 0, 0, 255]);
+  expect(await layerPixel(page, 10, 3)).toEqual([255, 0, 0, 255]);
+  expect(await layerPixel(page, 3, 3)).toEqual([0, 0, 0, 0]);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  expect(await layerPixel(page, 3, 3)).toEqual([255, 0, 0, 255]);
+  expect(await layerPixel(page, 2, 3)).toEqual([0, 0, 0, 0]);
+  // System font, crisp (no anti-aliasing): only fully opaque pixels in the exact color.
+  await page.keyboard.press('t');
+  await drawMouse(page, [[20, 2]]);
+  await dialog.getByLabel('Text', { exact: true }).fill('Ab');
+  await dialog.getByLabel('Font').selectOption('sans-serif');
+  await dialog.getByLabel('Size (px)').fill('14');
+  await dialog.getByLabel('Put the text on a new layer').uncheck();
+  await dialog.getByRole('button', { name: 'Place text' }).click();
+  await page.keyboard.press('Enter');
+  const stats = await page.evaluate(() => {
+    const c = (window as any).art.editor.doc.activeCel;
+    let ink = 0;
+    let partial = 0;
+    for (let y = 0; y < 24; y++)
+      for (let x = 19; x < 48; x++) {
+        const p = c.getPixel(x, y);
+        if (p[3] === 255 && p[0] === 255) ink++;
+        else if (p[3] > 0) partial++;
+      }
+    return { ink, partial, layers: (window as any).art.editor.doc.layers.length };
+  });
+  expect(stats.ink).toBeGreaterThan(20);
+  expect(stats.partial).toBe(0);
+  expect(stats.layers).toBe(2);
+});

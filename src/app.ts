@@ -24,12 +24,14 @@ import {
   settingsDialog,
   symmetryAxisDialog,
   tagDialog,
+  textDialog,
   shortcutsDialog,
 } from './ui/dialogs';
 import { h, icon, iconButton, isTyping } from './ui/dom';
 import { pickFiles } from './io/files';
 import { LayersPanel } from './ui/layers-panel';
 import { QuickBar } from './ui/quick-bar';
+import type { TextTool } from './tools/extra-tools';
 import { ReferenceWindow } from './ui/reference';
 import { closePopup, menuBar, mobileMenu } from './ui/menu';
 import { OptionsBar } from './ui/options-bar';
@@ -114,6 +116,7 @@ export class App {
     this.layersPanel = new LayersPanel(e);
     this.timeline = new Timeline(e);
     this.timeline.onTag = (i) => tagDialog(this, i);
+    (e.tools.text as TextTool).onPlace = (x, y) => textDialog(this, x, y);
     this.statusbar = new StatusBar(e);
     this.toolbar.onColorClick = () => {
       if (this.layout === 'mobile') this.openDrawer('colors');

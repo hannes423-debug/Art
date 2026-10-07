@@ -11,7 +11,7 @@ import { Viewport } from './render/viewport';
 import { type Settings, loadState, saveState } from './settings';
 import { MoveSession } from './tools/move-session';
 import { EllipseSelectTool, FillTool, HandTool, LassoTool, MoveTool, PickerTool, RectSelectTool, WandTool } from './tools/other-tools';
-import { GradientTool, ShadeTool } from './tools/extra-tools';
+import { GradientTool, ShadeTool, TextTool } from './tools/extra-tools';
 import { BrushTool, EraserTool, PencilTool, type SymmetryAxes } from './tools/paint-tools';
 import { EllipseTool, LineTool, RectTool } from './tools/shape-tools';
 import type { Tool, ToolId, ToolOptions } from './tools/tool';
@@ -106,6 +106,7 @@ export class Editor extends Emitter<EditorEvents> {
       ellipse: new EllipseTool(this),
       fill: new FillTool(this),
       gradient: new GradientTool(this),
+      text: new TextTool(this),
       picker: new PickerTool(this),
       'select-rect': new RectSelectTool(this),
       'select-ellipse': new EllipseSelectTool(this),
@@ -444,7 +445,7 @@ export class Editor extends Emitter<EditorEvents> {
   }
 
   /** Pastes pixels as a floating selection on the active (or a new) layer, ready to move. */
-  paste(img: ClipImage, asNewLayer = false, layerName?: string): void {
+  paste(img: ClipImage, asNewLayer = false, layerName?: string, keepPosition = false): void {
     this.commitFloating();
     this.stop();
     const doc = this.doc;
@@ -458,7 +459,7 @@ export class Editor extends Emitter<EditorEvents> {
     if (!this.canEditPixels()) return;
     let { x, y } = img;
     const fits = x >= 0 && y >= 0 && x + img.width <= doc.width && y + img.height <= doc.height;
-    if (!fits) {
+    if (!fits && !keepPosition) {
       // Center on the visible part of the canvas.
       const c = this.view.screenToDoc(this.view.width / 2, this.view.height / 2);
       x = Math.round(Math.max(0, Math.min(doc.width - 1, c.x)) - img.width / 2);

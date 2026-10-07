@@ -2427,3 +2427,21 @@ input[type='range']::-moz-range-thumb {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Text dialog */
+.text-input {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  font: 14px var(--mono);
+}
+
+.text-preview {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+  margin: 4px auto 0;
+  border-radius: 6px;
+  image-rendering: pixelated;
+}
