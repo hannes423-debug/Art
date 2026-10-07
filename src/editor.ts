@@ -264,6 +264,11 @@ export class Editor extends Emitter<EditorEvents> {
       this.toast('The active layer is hidden. Show it to edit.');
       return false;
     }
+    const group = this.doc.groupOf(this.doc.activeLayer);
+    if (group && !group.visible) {
+      this.toast(`The group “${group.name}” is hidden. Show it to edit.`);
+      return false;
+    }
     return true;
   }
 

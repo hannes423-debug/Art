@@ -22,6 +22,21 @@ export interface Tag {
   direction: TagDirection;
 }
 
+/**
+ * A layer group (one level deep). Its member layers are adjacent in the
+ * layer list; the group is composited on its own and then blended with
+ * its opacity, and hiding it hides every member.
+ */
+export interface LayerGroup {
+  id: number;
+  name: string;
+  visible: boolean;
+  /** 0..1 */
+  opacity: number;
+  /** Members are folded away in the layers panel. */
+  collapsed: boolean;
+}
+
 export function cloneTags(tags: Tag[]): Tag[] {
   return tags.map((t) => ({ ...t }));
 }
@@ -54,6 +69,7 @@ export class ArtDocument extends Emitter<DocEvents> {
   frames: Frame[] = [{ duration: 100 }];
   /** Animation tags (frame ranges), in no particular order. */
   tags: Tag[] = [];
+  groups: LayerGroup[] = [];
   selection: Selection;
   name: string;
   private _activeLayer!: Layer;
@@ -148,6 +164,34 @@ export class ArtDocument extends Emitter<DocEvents> {
 
   notifySelection(): void {
     this.emit('selection');
+  }
+
+  groupOf(layer: Layer): LayerGroup | undefined {
+    return layer.group === null ? undefined : this.groups.find((g) => g.id === layer.group);
+  }
+
+  /** The layer and its group (if any) are both visible. */
+  isShown(layer: Layer): boolean {
+    return layer.visible && (this.groupOf(layer)?.visible ?? true);
+  }
+
+  /** Layer opacity times its group's opacity (for previews). */
+  effectiveOpacity(layer: Layer): number {
+    return layer.opacity * (this.groupOf(layer)?.opacity ?? 1);
+  }
+
+  /** Member layers of a group, bottom to top. */
+  groupMembers(id: number): Layer[] {
+    return this.layers.filter((l) => l.group === id);
+  }
+
+  newGroupId(): number {
+    return this.groups.reduce((m, g) => Math.max(m, g.id), 0) + 1;
+  }
+
+  uniqueGroupName(): string {
+    const names = new Set(this.groups.map((g) => g.name));
+    for (let i = 1; ; i++) if (!names.has(`Group ${i}`)) return `Group ${i}`;
   }
 
   /** True when the layer's cel at `frame` is shared with another frame (a linked cel). */

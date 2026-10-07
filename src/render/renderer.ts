@@ -289,17 +289,50 @@ export class Renderer {
     c.globalAlpha = 1;
     c.globalCompositeOperation = 'source-over';
     c.clearRect(r.x, r.y, r.w, r.h);
-    for (const layer of doc.layers) {
-      if (!layer.visible || layer.opacity <= 0) continue;
+    const draw = (ctx: CanvasRenderingContext2D, layer: (typeof doc.layers)[number]) => {
+      if (!layer.visible || layer.opacity <= 0) return;
       const cel = layer.cels[frame];
-      if (!cel || !cel.data) continue;
-      const src = cel.getCanvas();
-      c.globalAlpha = layer.opacity;
-      c.globalCompositeOperation = canvasOpFor(layer.blendMode);
-      c.drawImage(src, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+      if (!cel || !cel.data) return;
+      ctx.globalAlpha = layer.opacity;
+      ctx.globalCompositeOperation = canvasOpFor(layer.blendMode);
+      ctx.drawImage(cel.getCanvas(), r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+    };
+    const layers = doc.layers;
+    for (let i = 0; i < layers.length; i++) {
+      const group = doc.groupOf(layers[i]);
+      if (!group) {
+        draw(c, layers[i]);
+        continue;
+      }
+      // A group is composited on its own, then drawn with the group's opacity.
+      let j = i;
+      while (j + 1 < layers.length && layers[j + 1].group === layers[i].group) j++;
+      if (group.visible && group.opacity > 0) {
+        const g = this.groupContext(doc);
+        g.globalAlpha = 1;
+        g.globalCompositeOperation = 'source-over';
+        g.clearRect(r.x, r.y, r.w, r.h);
+        for (let k = i; k <= j; k++) draw(g, layers[k]);
+        c.globalAlpha = group.opacity;
+        c.globalCompositeOperation = 'source-over';
+        c.drawImage(g.canvas, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+      }
+      i = j;
     }
     c.globalAlpha = 1;
     c.globalCompositeOperation = 'source-over';
+  }
+
+  private groupCanvas: HTMLCanvasElement | null = null;
+
+  /** Scratch canvas (document size) for compositing a layer group. */
+  private groupContext(doc: ArtDocument): CanvasRenderingContext2D {
+    const c = (this.groupCanvas ??= document.createElement('canvas'));
+    if (c.width !== doc.width || c.height !== doc.height) {
+      c.width = doc.width;
+      c.height = doc.height;
+    }
+    return c.getContext('2d')!;
   }
 
   /** Frees display canvases of cels that are not currently shown (saves GPU/canvas memory). */
@@ -321,7 +354,9 @@ export class Renderer {
   private onionCanvas(doc: ArtDocument, frame: number, tint: string): HTMLCanvasElement {
     const key =
       `${doc.width}x${doc.height}|${tint}|` +
-      doc.layers.map((l) => `${l.id}:${l.visible ? 1 : 0}:${l.opacity}:${l.blendMode}:${l.cels[frame].id}:${l.cels[frame].version}`).join(',');
+      doc.layers
+        .map((l) => `${l.id}:${doc.isShown(l) ? 1 : 0}:${doc.effectiveOpacity(l)}:${l.blendMode}:${l.cels[frame].id}:${l.cels[frame].version}`)
+        .join(',');
     let entry = this.onion.get(frame);
     if (entry && entry.key === key) return entry.canvas;
     const canvas = entry?.canvas ?? document.createElement('canvas');
@@ -331,8 +366,8 @@ export class Renderer {
     c.clearRect(0, 0, doc.width, doc.height);
     for (const layer of doc.layers) {
       const cel = layer.cels[frame];
-      if (!layer.visible || !cel.data) continue;
-      c.globalAlpha = layer.opacity;
+      if (!doc.isShown(layer) || !cel.data) continue;
+      c.globalAlpha = doc.effectiveOpacity(layer);
       c.globalCompositeOperation = canvasOpFor(layer.blendMode);
       c.drawImage(cel.getCanvas(), 0, 0);
     }

@@ -1,5 +1,5 @@
 import { type RGBA, parseHex, toHex } from '../core/color';
-import { ArtDocument, type Frame, MAX_DIMENSION, type Tag } from '../core/document';
+import { ArtDocument, type Frame, type LayerGroup, MAX_DIMENSION, type Tag } from '../core/document';
 import { BLEND_MODES, type BlendMode, Layer } from '../core/layer';
 import { Surface } from '../core/surface';
 import type { GridSettings } from '../render/renderer';
@@ -11,8 +11,11 @@ import { decodePNG, encodePNG } from './png';
  * data URL, in the browser library (IndexedDB) it is a Blob.
  */
 export const PROJECT_FORMAT = 'art-project';
-/** Newest version this build reads and writes. Files without linked cels are written as version 1. */
-export const PROJECT_VERSION = 2;
+/**
+ * Newest version this build reads. Files are written with the lowest
+ * version that can hold them: 3 with layer groups, 2 with linked cels, else 1.
+ */
+export const PROJECT_VERSION = 3;
 export const PROJECT_EXT = 'artproj';
 export const PROJECT_MIME = 'application/vnd.art-project+json';
 
@@ -22,6 +25,8 @@ export interface ProjectLayer<C> {
   opacity: number;
   blendMode: BlendMode;
   alphaLocked: boolean;
+  /** Group id (version 3); members of a group are adjacent. */
+  group?: number;
   /** One entry per frame; null = fully transparent cel; { link: i } = same cel as frame i (version 2). */
   cels: (C | null | { link: number })[];
 }
@@ -35,6 +40,7 @@ export interface ProjectData<C> {
   height: number;
   frames: Frame[];
   tags?: Tag[];
+  groups?: LayerGroup[];
   /** Bottom-to-top. */
   layers: ProjectLayer<C>[];
   activeLayer: number;
@@ -78,18 +84,29 @@ export async function serializeProject<C>(doc: ArtDocument, extras: ProjectExtra
       const png = await encodeCel(c);
       cels.push(png ? await wrap(png) : null);
     }
-    layers.push({ name: l.name, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode, alphaLocked: l.alphaLocked, cels });
+    const group = doc.groupOf(l);
+    layers.push({
+      name: l.name,
+      visible: l.visible,
+      opacity: l.opacity,
+      blendMode: l.blendMode,
+      alphaLocked: l.alphaLocked,
+      ...(group ? { group: group.id } : {}),
+      cels,
+    });
   }
+  const usedGroups = doc.groups.filter((g) => doc.layers.some((l) => l.group === g.id)).map((g) => ({ ...g }));
   const now = new Date().toISOString();
   return {
     format: PROJECT_FORMAT,
-    version: linked ? 2 : 1,
+    version: usedGroups.length ? 3 : linked ? 2 : 1,
     generator: `Art ${__APP_VERSION__}`,
     name: doc.name,
     width: doc.width,
     height: doc.height,
     frames: doc.frames.map((f) => ({ duration: f.duration })),
     tags: doc.tags.map((t) => ({ ...t })),
+    ...(usedGroups.length ? { groups: usedGroups } : {}),
     layers,
     activeLayer: doc.activeLayerIndex,
     activeFrame: doc.activeFrame,
@@ -176,9 +193,28 @@ export async function deserializeProject(input: string | ProjectData<unknown>): 
     layer.opacity = Math.max(0, Math.min(1, Number(pl.opacity ?? 1)));
     layer.blendMode = BLEND_MODES.some((m) => m.id === pl.blendMode) ? pl.blendMode : 'normal';
     layer.alphaLocked = pl.alphaLocked === true;
+    layer.group = Number.isInteger(pl.group) ? (pl.group as number) : null;
     layers.push(layer);
   }
   const doc = ArtDocument.fromLayers(width, height, layers, frames, typeof data.name === 'string' ? data.name : 'Untitled');
+  // Groups: keep those with members; a group's members must be adjacent.
+  doc.groups = (Array.isArray(data.groups) ? data.groups : [])
+    .filter((g) => Number.isInteger(g?.id))
+    .map((g) => ({
+      id: g.id,
+      name: typeof g.name === 'string' ? g.name.slice(0, 64) : 'Group',
+      visible: g.visible !== false,
+      opacity: Math.max(0, Math.min(1, Number(g.opacity ?? 1))),
+      collapsed: g.collapsed === true,
+    }));
+  const ended = new Set<number>();
+  let prev: number | null = null;
+  for (const l of layers) {
+    if (l.group !== null && (!doc.groups.some((g) => g.id === l.group) || ended.has(l.group))) l.group = null;
+    if (prev !== null && prev !== l.group) ended.add(prev);
+    prev = l.group;
+  }
+  doc.groups = doc.groups.filter((g) => layers.some((l) => l.group === g.id));
   const colorRe = /^#[0-9a-f]{6}$/i;
   doc.tags = (Array.isArray(data.tags) ? data.tags : [])
     .map((t) => ({

@@ -33,6 +33,8 @@ export class Layer {
   blendMode: BlendMode = 'normal';
   /** When set, painting only changes color and keeps existing alpha. */
   alphaLocked = false;
+  /** Id of the group this layer belongs to (members of a group are adjacent), or null. */
+  group: number | null = null;
   cels: Surface[];
 
   constructor(name: string, cels: Surface[]) {
@@ -56,6 +58,7 @@ export class Layer {
     l.opacity = this.opacity;
     l.blendMode = this.blendMode;
     l.alphaLocked = this.alphaLocked;
+    l.group = this.group;
     return l;
   }
 }

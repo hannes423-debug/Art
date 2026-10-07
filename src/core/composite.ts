@@ -91,16 +91,37 @@ export interface CompositeOptions {
   includeHidden?: boolean;
 }
 
-/** Flattens the visible layers of a frame into a new RGBA buffer of size rect.w × rect.h. */
+/**
+ * Flattens the visible layers of a frame into a new RGBA buffer of size
+ * rect.w × rect.h. A layer group is composited on its own first and the
+ * result blended with the group's opacity.
+ */
 export function compositeFrame(doc: ArtDocument, frame: number, opts: CompositeOptions = {}): Pixels {
   const rect = opts.rect ?? { x: 0, y: 0, w: doc.width, h: doc.height };
   const out = allocPixels(rect.w, rect.h);
-  for (const layer of doc.layers) {
-    if (opts.layers && !opts.layers.includes(layer)) continue;
-    if (!layer.visible && !opts.includeHidden) continue;
+  const layers = doc.layers;
+  const blendLayer = (dst: Pixels, layer: Layer) => {
+    if (opts.layers && !opts.layers.includes(layer)) return;
+    if (!layer.visible && !opts.includeHidden) return;
     const cel = layer.cels[frame];
-    if (!cel?.data || layer.opacity <= 0) continue;
-    blendImage(out, rect.w, rect.h, cel.data, doc.width, doc.height, -rect.x, -rect.y, layer.opacity, layer.blendMode);
+    if (!cel?.data || layer.opacity <= 0) return;
+    blendImage(dst, rect.w, rect.h, cel.data, doc.width, doc.height, -rect.x, -rect.y, layer.opacity, layer.blendMode);
+  };
+  for (let i = 0; i < layers.length; i++) {
+    const layer = layers[i];
+    const group = doc.groupOf(layer);
+    if (!group) {
+      blendLayer(out, layer);
+      continue;
+    }
+    let j = i;
+    while (j + 1 < layers.length && layers[j + 1].group === layer.group) j++;
+    if ((group.visible || opts.includeHidden) && group.opacity > 0) {
+      const tmp = allocPixels(rect.w, rect.h);
+      for (let k = i; k <= j; k++) blendLayer(tmp, layers[k]);
+      blendImage(out, rect.w, rect.h, tmp, rect.w, rect.h, 0, 0, group.opacity, 'normal');
+    }
+    i = j;
   }
   return out;
 }

@@ -2445,3 +2445,49 @@ input[type='range']::-moz-range-thumb {
   border-radius: 6px;
   image-rendering: pixelated;
 }
+
+/* Layer groups */
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 0 2px 0 0;
+  border-radius: 6px;
+  background: var(--panel-2);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.group-row:hover {
+  background: var(--panel-3);
+}
+
+.group-row .lp-caret,
+.group-row .lp-more {
+  width: 26px;
+  height: 26px;
+  color: var(--text-dim);
+}
+
+.group-row .lp-folder {
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+}
+
+.group-row .lp-name {
+  flex: 1;
+}
+
+.group-row.hidden-layer .lp-name,
+.group-row.hidden-layer .lp-folder {
+  opacity: 0.45;
+}
+
+.layer-row.in-group {
+  margin-left: 14px;
+  border-left: 2px solid var(--border);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}

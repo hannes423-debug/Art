@@ -1,6 +1,6 @@
 import type { RGBA } from './core/color';
 import { blendImage, compositeFrame } from './core/composite';
-import { type ArtDocument, cloneTags, type Frame, type Tag } from './core/document';
+import { type ArtDocument, cloneTags, type Frame, type LayerGroup, type Tag } from './core/document';
 import { type Rect, clipRect, unionRect } from './core/geometry';
 import { type Command, CompoundCommand, FnCommand, type History } from './core/history';
 import { cropPixels, flipHorizontal, flipVertical, type ResampleMode, resizePixels, rotate180, rotate90 } from './core/imageops';
@@ -60,6 +60,8 @@ export function changeSelection(doc: ArtDocument, history: History, label: strin
 export function addLayer(doc: ArtDocument, history: History, layer?: Layer, index?: number, label = 'New layer'): Layer {
   const l = layer ?? Layer.blank(doc.uniqueLayerName(), doc.width, doc.height, doc.frames.length);
   const at = index ?? doc.activeLayerIndex + 1;
+  // A new layer above a grouped layer joins that group (members stay adjacent).
+  if (!layer && index === undefined) l.group = doc.activeLayer.group;
   const prevActive = doc.activeLayer;
   history.execute(
     new FnCommand(
@@ -99,16 +101,158 @@ export function deleteLayer(doc: ArtDocument, history: History, layer = doc.acti
   return true;
 }
 
+interface Structure {
+  layers: Layer[];
+  groupIds: (number | null)[];
+  groups: LayerGroup[];
+  active: Layer;
+}
+
+function snapshotStructure(doc: ArtDocument): Structure {
+  return { layers: [...doc.layers], groupIds: doc.layers.map((l) => l.group), groups: doc.groups.map((g) => ({ ...g })), active: doc.activeLayer };
+}
+
+function restoreStructure(doc: ArtDocument, s: Structure): void {
+  doc.layers = [...s.layers];
+  doc.layers.forEach((l, i) => (l.group = s.groupIds[i]));
+  doc.groups = s.groups.map((g) => ({ ...g }));
+  doc.setActiveLayer(s.active);
+  doc.emit('active');
+  doc.notifyLayers();
+}
+
+/**
+ * Runs a change to the layer list / groups and records it as one undo step
+ * by snapshotting the structure before and after.
+ */
+export function structureChange(doc: ArtDocument, history: History, label: string, mutate: () => void, bytes = 256): void {
+  const before = snapshotStructure(doc);
+  mutate();
+  const after = snapshotStructure(doc);
+  restoreStructure(doc, after);
+  history.push(
+    new FnCommand(
+      label,
+      () => restoreStructure(doc, after),
+      () => restoreStructure(doc, before),
+      bytes,
+    ),
+  );
+}
+
+/**
+ * Moves a layer to an index. Dropped between two members of a group it
+ * joins that group; anywhere else it leaves its group.
+ */
 export function moveLayer(doc: ArtDocument, history: History, layer: Layer, toIndex: number): void {
   const from = doc.layers.indexOf(layer);
   const to = Math.max(0, Math.min(doc.layers.length - 1, toIndex));
   if (from < 0 || from === to) return;
-  history.execute(
-    new FnCommand(
-      'Move layer',
-      () => doc.moveLayer(layer, to),
-      () => doc.moveLayer(layer, from),
-    ),
+  structureChange(doc, history, 'Move layer', () => {
+    doc.layers.splice(from, 1);
+    doc.layers.splice(to, 0, layer);
+    const below = doc.layers[to - 1];
+    const above = doc.layers[to + 1];
+    layer.group = below && above && below.group !== null && below.group === above.group ? below.group : null;
+  });
+}
+
+/**
+ * Moves the active layer one step up (+1) or down (-1), stepping into and
+ * out of groups on the way: at the edge of its group a layer first leaves
+ * the group; next to a group it first joins it.
+ */
+export function stepLayer(doc: ArtDocument, history: History, dir: 1 | -1): void {
+  const layer = doc.activeLayer;
+  const i = doc.layers.indexOf(layer);
+  const next = doc.layers[i + dir];
+  if (layer.group !== null && next?.group !== layer.group) {
+    structureChange(doc, history, 'Move layer out of group', () => (layer.group = null));
+    return;
+  }
+  if (!next) return;
+  if (layer.group === null && next.group !== null) {
+    structureChange(doc, history, 'Move layer into group', () => (layer.group = next.group));
+    return;
+  }
+  structureChange(doc, history, 'Move layer', () => {
+    doc.layers[i] = next;
+    doc.layers[i + dir] = layer;
+  });
+}
+
+/** Puts the active layer into a new group. Returns an explanation if it already is in one. */
+export function groupLayer(doc: ArtDocument, history: History): string | null {
+  const layer = doc.activeLayer;
+  if (layer.group !== null) return 'This layer is already in a group';
+  structureChange(doc, history, 'Group layer', () => {
+    const id = doc.newGroupId();
+    doc.groups.push({ id, name: doc.uniqueGroupName(), visible: true, opacity: 1, collapsed: false });
+    layer.group = id;
+  });
+  return null;
+}
+
+/** Dissolves a group; its layers stay where they are. */
+export function ungroup(doc: ArtDocument, history: History, id: number): void {
+  structureChange(doc, history, 'Ungroup', () => {
+    for (const l of doc.groupMembers(id)) l.group = null;
+    doc.groups = doc.groups.filter((g) => g.id !== id);
+  });
+}
+
+export function setGroupProps(doc: ArtDocument, history: History, id: number, props: Partial<Omit<LayerGroup, 'id'>>, label = 'Group properties'): void {
+  structureChange(doc, history, label, () => {
+    const g = doc.groups.find((x) => x.id === id);
+    if (g) Object.assign(g, props);
+  });
+}
+
+/** Deletes a group with its layers. Returns an explanation if that would leave no layers. */
+export function deleteGroup(doc: ArtDocument, history: History, id: number): string | null {
+  const members = doc.groupMembers(id);
+  if (members.length >= doc.layers.length) return 'A document needs at least one layer outside the group';
+  structureChange(
+    doc,
+    history,
+    'Delete group',
+    () => {
+      const bottom = doc.layers.indexOf(members[0]);
+      doc.layers = doc.layers.filter((l) => l.group !== id);
+      doc.groups = doc.groups.filter((g) => g.id !== id);
+      doc.setActiveLayer(doc.layers[Math.max(0, Math.min(doc.layers.length - 1, bottom - 1))]);
+    },
+    members.reduce((s, l) => s + bytesOfLayer(l), 256),
+  );
+  return null;
+}
+
+/** Flattens a group's visible layers (with the group opacity) into one layer that replaces them. */
+export function mergeGroup(doc: ArtDocument, history: History, id: number): void {
+  const group = doc.groups.find((g) => g.id === id);
+  const members = doc.groupMembers(id);
+  if (!group || !members.length) return;
+  // Merge what the group looks like when shown; a hidden group gives a hidden layer.
+  const wasVisible = group.visible;
+  group.visible = true;
+  const merged = new Layer(
+    group.name,
+    doc.frames.map((_, f) => new Surface(doc.width, doc.height, compositeFrame(doc, f, { layers: members }))),
+  );
+  group.visible = wasVisible;
+  merged.visible = wasVisible;
+  structureChange(
+    doc,
+    history,
+    'Merge group',
+    () => {
+      const at = doc.layers.indexOf(members[0]);
+      doc.layers = doc.layers.filter((l) => l.group !== id);
+      doc.layers.splice(at, 0, merged);
+      doc.groups = doc.groups.filter((g) => g.id !== id);
+      doc.setActiveLayer(merged);
+    },
+    bytesOfLayer(merged),
   );
 }
 
@@ -145,6 +289,7 @@ export function mergeDown(doc: ArtDocument, history: History): string | null {
   if (index <= 0) return 'There is no layer below to merge into';
   if (!upper.visible) return 'Show the layer before merging it down';
   const lower = doc.layers[index - 1];
+  if (lower.group !== upper.group) return 'The layer below is in a different group';
   const oldData = lower.cels.map((c) => c.data);
   const merged = lower.cels.map((cel, f) => {
     const top = upper.cels[f].data;

@@ -1,7 +1,9 @@
 import type { ArtDocument } from '../core/document';
 import { BLEND_MODES, type BlendMode, type Layer } from '../core/layer';
 import type { Editor } from '../editor';
-import { addLayer, deleteLayer, duplicateLayer, mergeDown, moveLayer, setLayerProps } from '../ops';
+import type { LayerGroup } from '../core/document';
+import { addLayer, deleteGroup, deleteLayer, duplicateLayer, mergeDown, mergeGroup, moveLayer, setGroupProps, setLayerProps, stepLayer, ungroup } from '../ops';
+import { promptDialog } from './dialog';
 import { h, icon, iconButton } from './dom';
 import { type PopupItem, popupMenu } from './menu';
 
@@ -97,9 +99,99 @@ export class LayersPanel {
     this.render();
   }
 
-  private shift(delta: number): void {
-    const doc = this.editor.doc;
-    moveLayer(doc, this.editor.history, doc.activeLayer, doc.activeLayerIndex + delta);
+  private shift(delta: 1 | -1): void {
+    stepLayer(this.editor.doc, this.editor.history, delta);
+  }
+
+  /** Header row of a layer group: fold, visibility, name, menu. */
+  private groupRow(group: LayerGroup): HTMLElement {
+    const e = this.editor;
+    const doc = e.doc;
+    const caret = h(
+      'button',
+      { type: 'button', class: 'icon-btn lp-caret', title: group.collapsed ? 'Expand group' : 'Collapse group', 'aria-expanded': String(!group.collapsed) },
+      icon(group.collapsed ? 'chevron-right' : 'chevron-down', 16),
+    );
+    caret.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      group.collapsed = !group.collapsed;
+      doc.notifyLayers();
+      e.markChanged();
+    });
+    const eye = h(
+      'button',
+      {
+        type: 'button',
+        class: `icon-btn lp-eye ${group.visible ? '' : 'off'}`.trim(),
+        title: group.visible ? 'Hide group' : 'Show group',
+        'aria-label': group.visible ? 'Hide group' : 'Show group',
+      },
+      icon(group.visible ? 'eye' : 'eye-off', 16),
+    );
+    eye.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      group.visible = !group.visible;
+      doc.notifyLayers();
+      e.markChanged();
+    });
+    const name = h('span', { class: 'lp-name', title: 'Double-click to rename' }, group.name);
+    const renameGroup = async () => {
+      const v = await promptDialog('Rename group', 'Name', group.name, 'Rename');
+      if (v && v.trim() && v.trim() !== group.name) setGroupProps(doc, e.history, group.id, { name: v.trim() }, 'Rename group');
+    };
+    name.addEventListener('dblclick', (ev) => {
+      ev.stopPropagation();
+      void renameGroup();
+    });
+    const items = (): PopupItem[] => [
+      { label: 'Rename group…', run: () => void renameGroup() },
+      {
+        label: 'Group opacity…',
+        run: async () => {
+          const v = await promptDialog('Group opacity', 'Opacity (%)', String(Math.round(group.opacity * 100)), 'Set');
+          const n = Number(v);
+          if (v !== null && Number.isFinite(n)) setGroupProps(doc, e.history, group.id, { opacity: Math.max(0, Math.min(100, n)) / 100 }, 'Group opacity');
+        },
+      },
+      { label: 'Merge group into one layer', run: () => mergeGroup(doc, e.history, group.id) },
+      { label: 'Ungroup (keep layers)', run: () => ungroup(doc, e.history, group.id) },
+      {
+        label: 'Delete group and its layers',
+        danger: true,
+        run: () => {
+          const err = deleteGroup(doc, e.history, group.id);
+          if (err) e.toast(err);
+        },
+      },
+    ];
+    const more = h('button', { type: 'button', class: 'icon-btn lp-more', title: 'Group options', 'aria-label': 'Group options' }, icon('more', 16));
+    more.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      popupMenu(more, items());
+    });
+    const row = h(
+      'div',
+      { class: `group-row ${group.visible ? '' : 'hidden-layer'}`.trim(), role: 'option', 'aria-selected': 'false', dataset: { group: String(group.id) } },
+      caret,
+      eye,
+      h('span', { class: 'lp-folder', 'aria-hidden': 'true' }, icon('folder', 16)),
+      name,
+      group.opacity < 1 ? h('span', { class: 'lp-badges' }, h('span', { class: 'lp-badge' }, `${Math.round(group.opacity * 100)}%`)) : null,
+      more,
+    );
+    // Clicking the header selects the group's top layer.
+    row.addEventListener('click', () => {
+      const members = doc.groupMembers(group.id);
+      if (members.length) {
+        e.commitFloating();
+        doc.setActiveLayer(members[members.length - 1]);
+      }
+    });
+    row.addEventListener('contextmenu', (ev) => {
+      ev.preventDefault();
+      popupMenu({ x: ev.clientX, y: ev.clientY }, items());
+    });
+    return row;
   }
 
   private queueThumb(layer: Layer): void {
@@ -161,8 +253,13 @@ export class LayersPanel {
     this.alphaLock.setAttribute('aria-pressed', String(active.alphaLocked));
 
     const rows: HTMLElement[] = [];
+    let lastGroup: number | null = null;
     for (let i = doc.layers.length - 1; i >= 0; i--) {
       const layer = doc.layers[i];
+      const group = doc.groupOf(layer);
+      if (group && group.id !== lastGroup) rows.push(this.groupRow(group));
+      lastGroup = group ? group.id : null;
+      if (group?.collapsed) continue;
       const thumb = h('canvas', { class: 'lp-thumb', 'aria-hidden': 'true' });
       this.drawThumb(thumb, layer);
       const eye = h(
@@ -197,7 +294,7 @@ export class LayersPanel {
       const row = h(
         'div',
         {
-          class: `layer-row ${layer === active ? 'active' : ''} ${layer.visible ? '' : 'hidden-layer'}`.trim(),
+          class: `layer-row ${layer === active ? 'active' : ''} ${doc.isShown(layer) ? '' : 'hidden-layer'} ${group ? 'in-group' : ''}`.trim(),
           role: 'option',
           'aria-selected': String(layer === active),
           tabindex: '0',
@@ -258,7 +355,8 @@ export class LayersPanel {
     handle.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const rows = [...this.list.children] as HTMLElement[];
+      // Only layer rows are drop targets (group headers are skipped).
+      const rows = [...this.list.querySelectorAll<HTMLElement>('.layer-row')];
       const startIndex = rows.indexOf(row);
       const rowH = row.getBoundingClientRect().height || 40;
       const startY = e.clientY;
@@ -280,8 +378,9 @@ export class LayersPanel {
         rows.forEach((r) => r.classList.remove('drop-target'));
         if (target !== startIndex) {
           const doc = this.editor.doc;
-          // Rows are top-first; document layers are bottom-first.
-          moveLayer(doc, this.editor.history, layer, doc.layers.length - 1 - target);
+          // Move to the position of the layer shown in the target row.
+          const over = doc.layers.find((l) => String(l.id) === rows[target].dataset.layer);
+          if (over) moveLayer(doc, this.editor.history, layer, doc.layers.indexOf(over));
         }
       };
       handle.addEventListener('pointermove', move);

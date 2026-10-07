@@ -127,8 +127,8 @@ export class Timeline {
         const s = (sy * doc.width + sx) * 4;
         for (const l of doc.layers) {
           const src = l.cels[frame]?.data;
-          if (!l.visible || !src || src[s + 3] === 0) continue;
-          blendPixel(d, o, src[s], src[s + 1], src[s + 2], (src[s + 3] / 255) * l.opacity, l.blendMode);
+          if (!doc.isShown(l) || !src || src[s + 3] === 0) continue;
+          blendPixel(d, o, src[s], src[s + 1], src[s + 2], (src[s + 3] / 255) * doc.effectiveOpacity(l), l.blendMode);
         }
       }
     }

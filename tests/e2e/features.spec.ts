@@ -627,3 +627,43 @@ test('text tool places pixel-font and system-font text as a movable floating sel
   expect(stats.partial).toBe(0);
   expect(stats.layers).toBe(2);
 });
+
+test('layer groups in the layers panel: group, hide, collapse, merge', async ({ page }) => {
+  await newImage(page, 8, 8, 'white');
+  await selectTool(page, 'p');
+  await setFg(page, '#ff0000');
+  await page.keyboard.press('Shift+n');
+  await drawMouse(page, [[1, 1]]);
+  await page.keyboard.press('Control+g');
+  const panel = page.locator('.layers-panel');
+  const header = panel.locator('.group-row');
+  await expect(header).toHaveCount(1);
+  await expect(header.locator('.lp-name')).toHaveText('Group 1');
+  await expect(panel.locator('.layer-row.in-group')).toHaveCount(1);
+  // A new layer while inside the group joins it.
+  await page.keyboard.press('Shift+n');
+  await expect(panel.locator('.layer-row.in-group')).toHaveCount(2);
+  // Hiding the group hides its pixels and blocks painting into it.
+  await header.getByRole('button', { name: 'Hide group' }).click();
+  expect(
+    await page.evaluate(() => {
+      const e = (window as any).art.editor;
+      return e.renderer.compositeImage.getContext('2d').getImageData(1, 1, 1, 1).data[1];
+    }),
+  ).toBe(255);
+  await drawMouse(page, [[5, 5]]);
+  await expect(page.locator('.toast').last()).toContainText('Group 1');
+  await header.getByRole('button', { name: 'Show group' }).click();
+  // Collapse hides member rows.
+  await header.getByRole('button', { name: 'Collapse group' }).click();
+  await expect(panel.locator('.layer-row.in-group')).toHaveCount(0);
+  await header.getByRole('button', { name: 'Expand group' }).click();
+  // Merge the group from its menu.
+  await header.getByRole('button', { name: 'Group options' }).click();
+  await page.getByRole('menuitem', { name: 'Merge group into one layer' }).click();
+  await expect(panel.locator('.group-row')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).art.editor.doc.layers.map((l: any) => l.name))).toEqual(['Background', 'Group 1']);
+  expect(await layerPixel(page, 1, 1)).toEqual([255, 0, 0, 255]);
+  await page.keyboard.press('Control+z');
+  await expect(panel.locator('.group-row')).toHaveCount(1);
+});

@@ -51,6 +51,7 @@ fast and canvas-first.
 **Layers**
 - Add, duplicate, delete, rename, reorder (drag or buttons), merge down, flatten
 - Visibility, opacity, blend modes (normal, multiply, screen, additive), alpha lock
+- Layer groups (Ctrl+G): fold, hide and fade a whole group, move layers in and out with the up/down buttons, merge or ungroup
 - Live thumbnails
 
 **Sprites & pixel art**
