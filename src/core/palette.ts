@@ -459,3 +459,39 @@ export function nearestColorFinder(palette: RGBA[]): (r: number, g: number, b: n
     return hit;
   };
 }
+
+/** Marks a palette bundle file (all of a user's saved palettes in one JSON file). */
+export const PALETTE_BUNDLE_FORMAT = 'art-palettes';
+
+export interface NamedPalette {
+  name: string;
+  colors: RGBA[];
+}
+
+/** Several palettes as one JSON file, for moving "My palettes" to another device. */
+export function toPaletteBundle(list: NamedPalette[]): string {
+  const palettes = list.map((p) => ({ name: p.name, colors: p.colors.map((c) => toHex(c, c.a < 255)) }));
+  return JSON.stringify({ format: PALETTE_BUNDLE_FORMAT, version: 1, palettes }, null, 2) + '\n';
+}
+
+/** Reads a palette bundle; null when the text is not one. Bad entries are skipped. */
+export function parsePaletteBundle(text: string): NamedPalette[] | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== 'object' || (data as { format?: unknown }).format !== PALETTE_BUNDLE_FORMAT) return null;
+  const raw = (data as { palettes?: unknown }).palettes;
+  if (!Array.isArray(raw)) return [];
+  const out: NamedPalette[] = [];
+  for (const p of raw as { name?: unknown; colors?: unknown }[]) {
+    if (!p || !Array.isArray(p.colors)) continue;
+    const colors = (p.colors as unknown[]).map((c) => (typeof c === 'string' ? parseHex(c) : null)).filter((c): c is RGBA => !!c);
+    if (!colors.length) continue;
+    const name = typeof p.name === 'string' && p.name.trim() ? p.name.trim().slice(0, 64) : 'Imported palette';
+    out.push({ name, colors });
+  }
+  return out;
+}

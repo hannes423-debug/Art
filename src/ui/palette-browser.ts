@@ -142,10 +142,20 @@ export function paletteBrowserDialog(app: App): void {
         { class: 'pal-section-head' },
         h('h3', { class: 'dialog-section' }, 'My palettes'),
         btn('New…', 'Create an empty palette, or one from the current colors', () => void createNew()),
-        btn('Import…', 'Import a .gpl, .hex, .txt or .pal file', () => void app.importPaletteFile().then(render)),
+        btn('Import…', 'Import a .gpl, .hex, .txt or .pal file, or palettes exported from another device', () => void app.importPaletteFile().then(render)),
+        e.customPalettes.length
+          ? btn('Export all…', 'Save all of My palettes in one file, to import on another device', () => void app.exportPaletteBundle())
+          : null,
       ),
     );
-    if (!e.customPalettes.length) body.append(h('p', { class: 'field-hint' }, 'Palettes you create, import or copy appear here, saved in this browser.'));
+    if (!e.customPalettes.length)
+      body.append(
+        h(
+          'p',
+          { class: 'field-hint' },
+          'Palettes you create, import or copy appear here, saved in this browser. Use Export all… to move them to another device.',
+        ),
+      );
     for (const p of e.customPalettes) {
       const ref = { kind: 'custom' as const, id: p.id };
       const more = h('button', { type: 'button', class: 'icon-btn small', title: `More for ${p.name}`, 'aria-label': `More for ${p.name}` }, icon('more', 16));
@@ -321,27 +331,90 @@ export function paletteEditorDialog(app: App, id: string, onChange: () => void =
     onChange();
   });
 
+  // Drag to reorder: mouse and pen drag right away, touch after a short
+  // press (so a quick swipe still scrolls the dialog).
+  let drag: { pointer: number; x: number; y: number; active: boolean; timer: number } | null = null;
+  let suppressClick = 0;
+  const indexAt = (x: number, y: number): number => {
+    const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('.pal-edit-grid .swatch');
+    return el && grid.contains(el) ? Number(el.dataset.index) : -1;
+  };
+  const startDrag = () => {
+    if (!drag) return;
+    drag.active = true;
+    grid.classList.add('reordering');
+    try {
+      grid.setPointerCapture(drag.pointer);
+    } catch {
+      // The pointer may already be gone.
+    }
+    render();
+  };
+  const endDrag = (commit: boolean) => {
+    if (!drag) return;
+    clearTimeout(drag.timer);
+    const was = drag.active;
+    drag = null;
+    grid.classList.remove('reordering');
+    if (!was) return;
+    suppressClick = Date.now() + 300;
+    if (commit) save();
+    render();
+  };
+  grid.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0 || drag) return;
+    const i = indexAt(ev.clientX, ev.clientY);
+    if (i < 0) return;
+    sel = i;
+    drag = { pointer: ev.pointerId, x: ev.clientX, y: ev.clientY, active: false, timer: 0 };
+    if (ev.pointerType === 'touch') drag.timer = window.setTimeout(startDrag, 300);
+  });
+  grid.addEventListener('pointermove', (ev) => {
+    if (!drag || ev.pointerId !== drag.pointer) return;
+    const moved = Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y);
+    if (!drag.active) {
+      if (ev.pointerType === 'touch') {
+        if (moved > 8) endDrag(false); // a scroll, not a drag
+      } else if (moved > 5 && ev.buttons & 1) startDrag();
+      return;
+    }
+    ev.preventDefault();
+    const to = indexAt(ev.clientX, ev.clientY);
+    if (to < 0 || to === sel) return;
+    const [c] = colors.splice(sel, 1);
+    colors.splice(to, 0, c);
+    sel = to;
+    render();
+  });
+  grid.addEventListener('pointerup', (ev) => drag?.pointer === ev.pointerId && endDrag(true));
+  grid.addEventListener('pointercancel', (ev) => drag?.pointer === ev.pointerId && endDrag(true));
+  // While dragging on touch, keep the dialog from scrolling.
+  grid.addEventListener('touchmove', (ev) => drag?.active && ev.preventDefault(), { passive: false });
+  grid.addEventListener('contextmenu', (ev) => drag && ev.preventDefault());
+
   const render = () => {
-    grid.replaceChildren(
-      ...colors.map((c, i) => {
-        const b = h('button', {
-          type: 'button',
-          class: `swatch ${i === sel ? 'selected' : ''}`.trim(),
-          role: 'option',
-          'aria-selected': String(i === sel),
-          title: toHex(c),
-          'aria-label': `Color ${i + 1}: ${toHex(c)}`,
-        });
-        b.style.setProperty('--c', toCss(c));
-        b.addEventListener('click', () => {
-          sel = i;
-          render();
-        });
-        // Double-tap / double-click paints with it.
-        b.addEventListener('dblclick', () => e.setColor('fg', c));
-        return b;
-      }),
-    );
+    // Swatches are reused (not rebuilt) so a drag in progress keeps its element.
+    while (grid.children.length > colors.length) grid.lastElementChild!.remove();
+    while (grid.children.length < colors.length) {
+      const i = grid.children.length;
+      const b = h('button', { type: 'button', 'data-index': String(i), role: 'option' });
+      b.addEventListener('click', () => {
+        if (Date.now() < suppressClick) return;
+        sel = i;
+        render();
+      });
+      // Double-tap / double-click paints with it.
+      b.addEventListener('dblclick', () => colors[i] && e.setColor('fg', colors[i]));
+      grid.append(b);
+    }
+    colors.forEach((c, i) => {
+      const b = grid.children[i] as HTMLElement;
+      b.className = `swatch ${i === sel ? 'selected' : ''} ${drag?.active && i === sel ? 'dragging' : ''}`.trim();
+      b.setAttribute('aria-selected', String(i === sel));
+      b.title = toHex(c);
+      b.setAttribute('aria-label', `Color ${i + 1}: ${toHex(c)}`);
+      b.style.setProperty('--c', toCss(c));
+    });
     const c = sel >= 0 ? colors[sel] : null;
     hex.value = c ? toHex(c) : '';
     hex.disabled = !c;
@@ -357,7 +430,12 @@ export function paletteEditorDialog(app: App, id: string, onChange: () => void =
     className: 'pal-dialog',
     content: [
       h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Name'), name),
-      h('div', { class: 'pal-edit-head' }, count, h('span', { class: 'field-hint' }, 'Tap a color to select it. Double-tap to paint with it.')),
+      h(
+        'div',
+        { class: 'pal-edit-head' },
+        count,
+        h('span', { class: 'field-hint' }, 'Tap a color to select it, drag (or press and drag) to move it. Double-tap to paint with it.'),
+      ),
       grid,
       h('div', { class: 'pal-edit-sel' }, preview, hex, useFg),
       h('div', { class: 'pal-edit-tools' }, left, right, del, addFg, sort, snap),

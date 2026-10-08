@@ -40,6 +40,8 @@ export interface ProjectData<C> {
   height: number;
   frames: Frame[];
   tags?: Tag[];
+  /** Name of the tag shown in the project's thumbnail (optional). */
+  thumbnailTag?: string;
   groups?: LayerGroup[];
   /** Bottom-to-top. */
   layers: ProjectLayer<C>[];
@@ -109,6 +111,7 @@ export async function serializeProject<C>(doc: ArtDocument, extras: ProjectExtra
     height: doc.height,
     frames: doc.frames.map((f) => ({ duration: f.duration })),
     tags: doc.tags.map((t) => ({ ...t })),
+    ...(doc.thumbnailTag !== null ? { thumbnailTag: doc.thumbnailTag } : {}),
     ...(usedGroups.length ? { groups: usedGroups } : {}),
     layers,
     activeLayer: doc.activeLayerIndex,
@@ -229,6 +232,7 @@ export async function deserializeProject(input: string | ProjectData<unknown>): 
       direction: (['forward', 'reverse', 'pingpong'] as const).includes(t?.direction) ? t.direction : 'forward',
     }))
     .filter((t) => t.to >= t.from);
+  doc.thumbnailTag = typeof data.thumbnailTag === 'string' && doc.tags.some((t) => t.name === data.thumbnailTag) ? data.thumbnailTag : null;
   const al = layers[Math.max(0, Math.min(layers.length - 1, data.activeLayer | 0))];
   doc.setActiveLayer(al);
   doc.setActiveFrame(data.activeFrame | 0);

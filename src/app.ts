@@ -30,6 +30,7 @@ import {
 } from './ui/dialogs';
 import { h, icon, iconButton, isTyping } from './ui/dom';
 import type { RGBA } from './core/color';
+import type { ThumbnailAnimation } from './io/storage';
 import { fileNameFor, pickFiles, saveFileAs } from './io/files';
 import { LayersPanel } from './ui/layers-panel';
 import { QuickBar } from './ui/quick-bar';
@@ -710,6 +711,11 @@ export class App {
     tagDialog(this, index);
   }
 
+  /** Builds a missing animated thumbnail for a project in the library. */
+  upgradeLibraryThumbnail(id: string): Promise<ThumbnailAnimation | undefined> {
+    return this.files.upgradeLibraryThumbnail(id);
+  }
+
   showTimelapse(): void {
     void timelapseDialog(this);
   }
@@ -739,6 +745,10 @@ export class App {
 
   importPaletteFile(): Promise<void> {
     return this.files.importPalette();
+  }
+
+  exportPaletteBundle(): Promise<void> {
+    return this.files.exportPaletteBundle();
   }
 
   exportPaletteColors(name: string, colors: RGBA[], format: 'gpl' | 'hex'): Promise<void> {

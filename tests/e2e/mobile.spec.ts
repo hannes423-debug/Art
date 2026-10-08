@@ -299,3 +299,62 @@ test('animated project thumbnails play on a phone and fit the screen', async ({ 
   const box = (await page.locator('dialog.dialog').boundingBox())!;
   expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
 });
+
+test('press and drag reorders palette colors by touch; a quick swipe does not', async ({ page }) => {
+  await newImage(page, 8, 8);
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    e.createCustomPalette('Three', [
+      { r: 255, g: 0, b: 0, a: 255 },
+      { r: 0, g: 255, b: 0, a: 255 },
+      { r: 0, g: 0, b: 255, a: 255 },
+    ]);
+    (window as any).art.showPalettes();
+  });
+  await page.locator('dialog.dialog').last().locator('.pal-row', { hasText: 'Three' }).getByRole('button', { name: 'Edit' }).click();
+  const sw = page.locator('dialog.dialog').last().locator('.pal-edit-grid .swatch');
+  const center = async (i: number) => {
+    const b = (await sw.nth(i).boundingBox())!;
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  };
+  const colors = () => page.evaluate(() => (window as any).art.editor.palette.map((c: any) => c.r + c.g * 2 + c.b * 3));
+  const client = await cdp(page);
+  const [a, c] = [await center(0), await center(2)];
+  // Quick swipe: nothing moves.
+  await touch(client, 'touchStart', [a]);
+  for (let k = 1; k <= 5; k++) await touch(client, 'touchMove', [{ x: a.x + ((c.x - a.x) * k) / 5, y: a.y }]);
+  await touch(client, 'touchEnd', []);
+  expect(await colors()).toEqual([255, 510, 765]);
+  // Press, hold, then drag.
+  await touch(client, 'touchStart', [a]);
+  await page.waitForTimeout(450);
+  for (let k = 1; k <= 8; k++) {
+    await touch(client, 'touchMove', [{ x: a.x + ((c.x - a.x) * k) / 8, y: a.y + ((c.y - a.y) * k) / 8 }]);
+    await page.waitForTimeout(16);
+  }
+  await touch(client, 'touchEnd', []);
+  expect(await colors()).toEqual([510, 765, 255]);
+});
+
+test('the timeline live preview fits next to the frames on a phone', async ({ page }) => {
+  await newImage(page, 16, 16);
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    const d = e.doc;
+    d.insertFrame(
+      1,
+      { duration: 100 },
+      d.layers.map((l: any) => l.cels[0].clone()),
+    );
+    d.layers[0].cels[1].ensureData().fill(255);
+    d.emit('frames');
+    e.updateSettings({ showTimeline: true });
+  });
+  const preview = page.locator('.tl-preview canvas');
+  await expect(preview).toBeVisible();
+  const box = (await preview.boundingBox())!;
+  const vw = page.viewportSize()!.width;
+  expect(box.x + box.width).toBeLessThanOrEqual(vw);
+  expect(box.width).toBe(32);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

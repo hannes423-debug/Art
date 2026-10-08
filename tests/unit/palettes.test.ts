@@ -2,7 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { parseHex } from '../../src/core/color';
 import { ArtDocument } from '../../src/core/document';
 import { History } from '../../src/core/history';
-import { PALETTE_PRESETS, findPreset, paletteNameFromFile, parsePalette, presetColors, quantizeRGB555, toGpl } from '../../src/core/palette';
+import {
+  PALETTE_PRESETS,
+  findPreset,
+  paletteNameFromFile,
+  parsePalette,
+  parsePaletteBundle,
+  presetColors,
+  quantizeRGB555,
+  toGpl,
+  toPaletteBundle,
+} from '../../src/core/palette';
 import { deserializeProject, projectToJSON } from '../../src/io/project';
 import { addFrame, countOffPalette, mapToPalette } from '../../src/ops';
 
@@ -92,5 +102,31 @@ describe('project files', () => {
     expect((await deserializeProject(json)).extras.paletteName).toBe('PICO-8');
     delete parsed.paletteName;
     expect((await deserializeProject(parsed)).extras.paletteName).toBeUndefined();
+  });
+});
+
+describe('palette bundles', () => {
+  it('carry all saved palettes between devices (names, order, alpha)', () => {
+    const list = [
+      { name: 'Skin', colors: [parseHex('#ffcc99')!, parseHex('#aa664480')!] },
+      { name: 'Sea', colors: presetColors('pico8') },
+    ];
+    const text = toPaletteBundle(list);
+    expect(JSON.parse(text).format).toBe('art-palettes');
+    expect(parsePaletteBundle(text)).toEqual(list);
+  });
+
+  it('are told apart from other files and skip broken entries', () => {
+    expect(parsePaletteBundle('GIMP Palette\nName: x\n')).toBeNull();
+    expect(parsePaletteBundle('{"palettes": []}')).toBeNull();
+    const text = JSON.stringify({
+      format: 'art-palettes',
+      version: 1,
+      palettes: [{ name: 'ok', colors: ['#000', 'nope'] }, { name: 'empty', colors: [] }, null, { colors: ['#fff'] }],
+    });
+    expect(parsePaletteBundle(text)).toEqual([
+      { name: 'ok', colors: [{ r: 0, g: 0, b: 0, a: 255 }] },
+      { name: 'Imported palette', colors: [{ r: 255, g: 255, b: 255, a: 255 }] },
+    ]);
   });
 });

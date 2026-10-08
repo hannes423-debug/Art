@@ -162,3 +162,105 @@ test('hundreds of animated thumbnails: one scheduler, only visible ones decoded,
   await page.locator('dialog.dialog .dialog-footer').getByRole('button', { name: 'Close' }).click();
   await expect.poll(() => page.evaluate(() => (window as any).art.thumbs.size)).toBe(0);
 });
+
+test('projects saved before animated thumbnails get one built when the list opens', async ({ page }) => {
+  await walkCycle(page);
+  // Make the stored entry look like one saved by an older version.
+  await page.evaluate(async () => {
+    const db: IDBDatabase = await new Promise((res, rej) => {
+      const req = indexedDB.open('art', 2);
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+    const tx = db.transaction('meta', 'readwrite');
+    const store = tx.objectStore('meta');
+    const all: any[] = await new Promise((r) => (store.getAll().onsuccess = (ev: any) => r(ev.target.result)));
+    for (const m of all) {
+      delete m.anim;
+      store.put(m);
+    }
+    await new Promise((r) => (tx.oncomplete = r));
+    db.close();
+  });
+  await page.evaluate(() => (window as any).art.showProjects());
+  await expect(page.locator('.project-thumb canvas')).toHaveCount(1);
+  await expect.poll(async () => (await shown(page)).red).not.toBe(-1);
+  // Stored, so the next time it is there right away; the project itself is unchanged.
+  const meta = await page.evaluate(async () => {
+    const db: IDBDatabase = await new Promise((res) => (indexedDB.open('art', 2).onsuccess = (ev: any) => res(ev.target.result)));
+    const all: any[] = await new Promise((r) => (db.transaction('meta').objectStore('meta').getAll().onsuccess = (ev: any) => r(ev.target.result)));
+    db.close();
+    return all.map((m) => ({ frames: m.anim?.durations, w: m.anim?.frameW }));
+  });
+  expect(meta).toEqual([{ frames: [100, 200, 300], w: 4 }]);
+  expect(await page.evaluate(() => (window as any).art.editor.modified)).toBe(false);
+});
+
+test('the tag dialog picks which animation the project thumbnail plays', async ({ page }) => {
+  await walkCycle(page);
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    e.doc.tags = [
+      { name: 'start', from: 0, to: 0, color: '#5aa9ff', direction: 'forward' },
+      { name: 'move', from: 1, to: 2, color: '#ff6b6b', direction: 'forward' },
+    ];
+    e.doc.emit('frames');
+    e.updateSettings({ showTimeline: true });
+  });
+  await page.locator('.tl-tag.start', { hasText: 'move' }).click();
+  const dlg = page.locator('dialog.dialog').last();
+  await dlg.getByLabel('Show this animation in the project thumbnail').check();
+  await dlg.getByRole('button', { name: 'Save' }).click();
+  expect(await page.evaluate(() => (window as any).art.editor.doc.thumbnailTag)).toBe('move');
+  await page.keyboard.press('Control+s');
+  await page.waitForFunction(() => !(window as any).art.editor.modified);
+  await page.evaluate(() => (window as any).art.showProjects());
+  // Frame 0 is active, but the thumbnail plays “move” (frames 2 and 3) only.
+  await expect.poll(async () => (await shown(page)).red).not.toBe(-1);
+  const seen = new Set<number>();
+  const t0 = Date.now();
+  while (Date.now() - t0 < 1100) {
+    seen.add((await shown(page)).red);
+    await page.waitForTimeout(25);
+  }
+  expect([...seen].sort()).toEqual([1, 2]);
+});
+
+test('the timeline shows a live animated preview that follows edits', async ({ page }) => {
+  await walkCycle(page);
+  await page.evaluate(() => (window as any).art.editor.updateSettings({ showTimeline: true }));
+  const preview = page.locator('.tl-preview canvas');
+  await expect(preview).toHaveCount(1);
+  const red = () =>
+    preview.evaluate((c: HTMLCanvasElement) => {
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      for (let p = 0; p < d.length; p += 4) if (d[p] === 255 && d[p + 1] === 0 && d[p + 3] === 255) return (p / 4) % c.width;
+      return -1;
+    });
+  const seen = new Set<number>();
+  const t0 = Date.now();
+  while (Date.now() - t0 < 1300) {
+    seen.add(await red());
+    await page.waitForTimeout(25);
+  }
+  expect([...seen].sort()).toEqual([0, 1, 2]);
+  // Frame thumbnails stay still: frame 1's thumbnail keeps showing frame 1.
+  const f1 = await page.locator('.tl-frame[data-frame="1"] canvas').evaluate((c: HTMLCanvasElement) => c.toDataURL());
+  await page.waitForTimeout(300);
+  expect(await page.locator('.tl-frame[data-frame="1"] canvas').evaluate((c: HTMLCanvasElement) => c.toDataURL())).toBe(f1);
+  // Paint every frame blue: the preview updates without touching the active frame.
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    for (const c of e.doc.layers[0].cels) {
+      c.ensureData().fill(0);
+      c.ensureData().set([0, 0, 255, 255], 0);
+      c.touch({ x: 0, y: 0, w: 4, h: 4 });
+      e.doc.notifyPixels(c, { x: 0, y: 0, w: 4, h: 4 });
+    }
+  });
+  await expect.poll(red).toBe(-1);
+  expect(await page.evaluate(() => (window as any).art.editor.doc.activeFrame)).toBe(0);
+  // One frame: no preview. Turned off: no preview.
+  await page.evaluate(() => (window as any).art.editor.updateSettings({ animatedThumbs: false }));
+  await expect(page.locator('.tl-preview')).toBeHidden();
+});

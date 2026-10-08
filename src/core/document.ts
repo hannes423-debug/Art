@@ -70,6 +70,8 @@ export class ArtDocument extends Emitter<DocEvents> {
   /** Animation tags (frame ranges), in no particular order. */
   tags: Tag[] = [];
   groups: LayerGroup[] = [];
+  /** Name of the tag whose animation the project thumbnail shows (null: the animation around the current frame). */
+  thumbnailTag: string | null = null;
   selection: Selection;
   name: string;
   private _activeLayer!: Layer;
@@ -226,6 +228,12 @@ export class ArtDocument extends Emitter<DocEvents> {
     if (tag.direction === 'reverse') return fwd.reverse();
     // Ping-pong: there and back without repeating the ends.
     return [...fwd, ...fwd.slice(1, -1).reverse()];
+  }
+
+  /** Frame order for the project thumbnail: the chosen tag if it still exists, else the animation around `frame`. */
+  thumbnailOrder(frame: number): number[] {
+    const tag = this.thumbnailTag !== null ? this.tags.find((t) => t.name === this.thumbnailTag) : undefined;
+    return tag ? this.animationOrder(tag.from) : this.animationOrder(frame);
   }
 
   setTags(tags: Tag[]): void {

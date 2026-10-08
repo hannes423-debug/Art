@@ -1,10 +1,15 @@
 import { blendPixel } from '../core/composite';
 import type { ArtDocument } from '../core/document';
 import type { Editor } from '../editor';
+import { previewFrames, previewKey, renderStrip } from '../core/thumbnail';
 import { addFrame, deleteFrame, moveFrame, setAllFrameDurations } from '../ops';
 import { h, icon, iconButton } from './dom';
+import { crispSize, thumbAnimator } from './thumb-animator';
 
 const THUMB = 40;
+/** Live preview: frame size and the most frames it plays. */
+const PREVIEW_BOX = 40;
+const PREVIEW_MAX_FRAMES = 64;
 
 /**
  * Frame strip for simple sprite animation: select frames, add/duplicate/
@@ -20,6 +25,13 @@ export class Timeline {
   private unsub: (() => void)[] = [];
   private thumbTimer = 0;
   private pendingThumbs = new Set<number>();
+  /** Live animated preview (the frames in the strip stay still). */
+  private preview = h('div', { class: 'tl-preview', title: 'Live preview of the animation' });
+  private previewCanvas: HTMLCanvasElement | null = null;
+  private previewStrip: HTMLCanvasElement | null = null;
+  private previewSig = '';
+  private previewKey = '';
+  private previewTimer = 0;
   /** Opens the tag dialog (null = new tag). */
   onTag: (index: number | null) => void = () => {};
 
@@ -49,6 +61,7 @@ export class Timeline {
     });
     this.el.append(
       h('div', { class: 'tl-controls' }, prev, this.playBtn, next),
+      this.preview,
       this.frames,
       h(
         'div',
@@ -66,7 +79,10 @@ export class Timeline {
     );
     editor.on('document', () => this.attach(editor.doc));
     editor.on('playback', () => this.updateButtons());
-    editor.on('settings', () => this.updateButtons());
+    editor.on('settings', () => {
+      this.updateButtons();
+      this.queuePreview(0);
+    });
     this.attach(editor.doc);
   }
 
@@ -85,6 +101,7 @@ export class Timeline {
       doc.on('resize', () => this.render()),
       doc.on('pixels', ({ surface }) => {
         if (this.el.offsetParent === null) return;
+        this.queuePreview();
         // A linked cel changes every frame it appears in.
         for (const f of doc.framesOf(surface)) this.pendingThumbs.add(f);
         if (this.thumbTimer) return;
@@ -135,7 +152,65 @@ export class Timeline {
     ctx.putImageData(img, 0, 0);
   }
 
+  /** Rebuilds the live preview soon (edits are batched, like the frame thumbnails). */
+  private queuePreview(delay = 300): void {
+    clearTimeout(this.previewTimer);
+    this.previewTimer = window.setTimeout(() => {
+      this.previewTimer = 0;
+      this.updatePreview();
+    }, delay);
+  }
+
+  private updatePreview(): void {
+    const e = this.editor;
+    const doc = e.doc;
+    const order = e.playbackOrder();
+    // Nothing to animate, previews turned off, or the timeline is hidden.
+    if (order.length < 2 || !e.settings.animatedThumbs || this.el.offsetParent === null) {
+      this.preview.hidden = order.length < 2 || !e.settings.animatedThumbs;
+      if (this.preview.hidden) this.clearPreview();
+      return;
+    }
+    this.preview.hidden = false;
+    const { order: frames, durations } = previewFrames(doc, order, PREVIEW_MAX_FRAMES);
+    const key = previewKey(doc, frames, durations);
+    if (key === this.previewKey && this.previewCanvas?.isConnected) return;
+    this.previewKey = key;
+    const s = renderStrip(doc, frames, PREVIEW_BOX);
+    const sig = `${s.width}x${s.height}:${durations.join('.')}`;
+    const strip = this.previewStrip ?? document.createElement('canvas');
+    this.previewStrip = strip;
+    if (strip.width !== s.width || strip.height !== s.height) {
+      strip.width = s.width;
+      strip.height = s.height;
+    }
+    strip.getContext('2d')!.putImageData(new ImageData(s.data as ImageDataArray, s.width, s.height), 0, 0);
+    if (sig === this.previewSig && this.previewCanvas?.isConnected) {
+      // Same frames and timing: just redraw the current frame.
+      thumbAnimator.refresh(this.previewCanvas);
+      return;
+    }
+    this.previewSig = sig;
+    if (this.previewCanvas) thumbAnimator.detach(this.previewCanvas);
+    const c = h('canvas', { 'aria-hidden': 'true' });
+    const size = crispSize(s.frameW, s.frameH, PREVIEW_BOX);
+    c.style.width = `${size.w}px`;
+    c.style.height = `${size.h}px`;
+    this.preview.replaceChildren(c);
+    this.previewCanvas = c;
+    thumbAnimator.attach(c, { strip, frameW: s.frameW, frameH: s.frameH, durations });
+  }
+
+  private clearPreview(): void {
+    if (this.previewCanvas) thumbAnimator.detach(this.previewCanvas);
+    this.previewCanvas = null;
+    this.previewSig = '';
+    this.previewKey = '';
+    this.preview.replaceChildren();
+  }
+
   render(): void {
+    this.queuePreview(0);
     const doc = this.editor.doc;
     this.fps.value = String(Math.round(1000 / (doc.frames[0]?.duration || 125)));
     const layer = doc.activeLayer;

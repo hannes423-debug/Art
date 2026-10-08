@@ -106,6 +106,16 @@ export async function loadProject(id: string): Promise<{ meta: ProjectMeta; data
   return { meta, data: row.project };
 }
 
+/** Adds an animated preview to a stored project's metadata (if the project still exists). */
+export async function setProjectAnimation(id: string, anim: ThumbnailAnimation): Promise<void> {
+  const db = await openDB();
+  const tx = db.transaction('meta', 'readwrite');
+  const store = tx.objectStore('meta');
+  const meta = await request(store.get(id) as IDBRequest<ProjectMeta | undefined>);
+  if (meta) store.put({ ...meta, anim });
+  await done(tx);
+}
+
 export async function deleteProject(id: string): Promise<void> {
   const db = await openDB();
   const tx = db.transaction(['meta', 'data'], 'readwrite');

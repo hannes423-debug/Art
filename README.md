@@ -27,8 +27,9 @@ fast and canvas-first.
 ## Features
 
 **Drawing**
+
 - Brush with size, opacity, hardness, smoothing (stabilizer) and pen pressure (size and/or opacity)
-- Pencil with hard pixel edges, square or round tip, and *pixel-perfect* mode for clean 1px lines
+- Pencil with hard pixel edges, square or round tip, and _pixel-perfect_ mode for clean 1px lines
 - Eraser (hard-pixel or soft) that erases to true transparency
 - Line (Shift snaps to pixel-art angles 1:1, 2:1, 1:2), rectangle and ellipse (outline/filled, optional anti-aliasing)
 - Fill bucket with tolerance, contiguous/global, and "sample all layers"
@@ -41,6 +42,7 @@ fast and canvas-first.
 - Uniform stroke opacity: overlapping dabs inside one stroke never get darker
 
 **Selection & transform**
+
 - Rectangle, ellipse and lasso selection; magic wand. Replace/add/subtract/intersect (Shift/Alt)
 - Select by color, feather selection, grow, shrink and border selections (round or square, any radius); Ctrl+Alt+= / Ctrl+Alt+- grow or shrink by 1px. Select layer content → 1px outside border → fill outlines a sprite
 - Move tool with floating selections: drag or nudge with arrow keys without destroying what is underneath, then apply or cancel
@@ -49,12 +51,14 @@ fast and canvas-first.
 - Crop to selection, trim transparent edges, canvas size with anchor, scale image (nearest neighbour or smooth), flip and rotate
 
 **Layers**
+
 - Add, duplicate, delete, rename, reorder (drag or buttons), merge down, flatten
 - Visibility, opacity, blend modes (normal, multiply, screen, additive), alpha lock
 - Layer groups (Ctrl+G): fold, hide and fade a whole group, move layers in and out with the up/down buttons, merge or ungroup
 - Live thumbnails
 
 **Sprites & pixel art**
+
 - Crisp nearest-neighbour zoom, pixel grid when zoomed in, configurable tile grid, snap to grid
 - Exact pixel coordinates and selection size in the status bar
 - Frames with onion skin and animation playback (FPS)
@@ -66,22 +70,25 @@ fast and canvas-first.
 - Sprite sheet import (slice by cell size, offset and gap) and export (strip or grid, with padding and frame-data JSON)
 - Export scaled up 2×–16× without blurring
 - Palette lock: every painted color (including brush blending and gradients) snaps to the palette; Map colors to palette (with optional dithering) converts existing art
-- Palettes: a palette browser with built-in console and artist palettes (Game Boy, Game Boy Pocket, GBA-style and SNES-style 15-bit palettes, NES, PICO-8, Commodore 64, DawnBringer 16/32, Endesga 32, Sweetie 16, grayscale, 1-bit) and **your own palettes**: create, rename, edit colors, add/remove, reorder, sort, round to 15-bit, duplicate, delete. Switch quickly from the palette name in the color panel. Import GIMP `.gpl`, `.hex`/`.txt` and JASC `.pal` (saved to your palettes); export `.gpl` and `.hex`; extract colors from a layer
+- Palettes: a palette browser with built-in console and artist palettes (Game Boy, Game Boy Pocket, GBA-style and SNES-style 15-bit palettes, NES, PICO-8, Commodore 64, DawnBringer 16/32, Endesga 32, Sweetie 16, grayscale, 1-bit) and **your own palettes**: create, rename, edit colors, add/remove, reorder (buttons or drag), sort, round to 15-bit, duplicate, delete. Switch quickly from the palette name in the color panel. Import GIMP `.gpl`, `.hex`/`.txt` and JASC `.pal` (saved to your palettes); export `.gpl` and `.hex`; **Export all…** saves every palette you made in one file that Import… reads on another device (no account or server). Palette lock is remembered per palette. Extract colors from a layer
 - Map colors to palette converts an image to the selected palette — by default onto copies of the layers, keeping the originals (hidden) underneath
 
 **Color**
+
 - Foreground/background colors, HSV picker, hex and RGBA input, alpha, recent colors, palette swatches
 
 **Files**
+
 - Open PNG, JPEG, WebP, GIF and BMP; import images as layers; drag and drop
 - Export PNG (lossless, exact alpha), JPEG and WebP (where the browser supports it)
 - Projects are saved automatically in the browser and restored when you come back
-- **Recent projects** shows animated thumbnails for multi-frame sprites (the tag around the current frame, with its timing), crisp and transparent; turn them off in Settings
+- **Recent projects** shows animated thumbnails for multi-frame sprites (the tag around the current frame, with its timing), crisp and transparent; projects saved before this feature get theirs built automatically the first time the list opens. Pick which animation a project shows with “Show this animation in the project thumbnail” in the tag dialog. The timeline shows a live animated preview next to the (still) frames. Turn animation off in Settings
 - Save portable `.artproj` project files ([open format](docs/file-format.md)); on desktop Chrome/Edge, Save writes back to the same file
 - Share exports directly to other apps on mobile
 - Timelapse: every project records small snapshots as you draw (kept in the browser with the project, across sessions); File → Export timelapse… makes an MP4/WebM video, GIF or APNG of any length
 
 **Touch, stylus & views**
+
 - Pen: draws with pressure; pen eraser end erases. Palm rejection while the pen is down
 - Finger: one finger draws, two fingers pan and pinch-zoom (optional rotation), two-finger tap = undo, three-finger tap = redo
 - Once a pen is detected, fingers switch to navigation (configurable in Settings)
@@ -97,13 +104,13 @@ fast and canvas-first.
 
 Open the app, pick a size (or open an image) and draw.
 
-| | Desktop | Touch |
-| --- | --- | --- |
-| Draw | Left mouse button | One finger or pen |
-| Pan | Space+drag, middle mouse, Hand tool | Two fingers |
-| Zoom | Mouse wheel, Ctrl+wheel, `+`/`-`, pinch on a trackpad | Pinch |
-| Undo / redo | Ctrl+Z / Ctrl+Shift+Z | Two-finger tap / three-finger tap, ↶ ↷ buttons |
-| Tool options | Options bar under the menu | Slider strip above the tools; tap the active tool for all options |
+|              | Desktop                                               | Touch                                                             |
+| ------------ | ----------------------------------------------------- | ----------------------------------------------------------------- |
+| Draw         | Left mouse button                                     | One finger or pen                                                 |
+| Pan          | Space+drag, middle mouse, Hand tool                   | Two fingers                                                       |
+| Zoom         | Mouse wheel, Ctrl+wheel, `+`/`-`, pinch on a trackpad | Pinch                                                             |
+| Undo / redo  | Ctrl+Z / Ctrl+Shift+Z                                 | Two-finger tap / three-finger tap, ↶ ↷ buttons                    |
+| Tool options | Options bar under the menu                            | Slider strip above the tools; tap the active tool for all options |
 
 Common shortcuts: **B** brush, **P** pencil, **E** eraser, **L** line, **U**
 rectangle, **O** ellipse, **G** fill, **I** picker, **K** shading, **Shift+G** gradient, **T** text, **S** select, **Q** lasso,
@@ -126,22 +133,22 @@ instead of Ctrl.
 
 ### Install as an app
 
-Art is a Progressive Web App. In Chrome/Edge use *Install app* in the address
-bar or menu; on Android choose *Add to Home screen*; on iPhone/iPad open the
-Share menu in Safari and choose *Add to Home Screen*. The installed app opens
+Art is a Progressive Web App. In Chrome/Edge use _Install app_ in the address
+bar or menu; on Android choose _Add to Home screen_; on iPhone/iPad open the
+Share menu in Safari and choose _Add to Home Screen_. The installed app opens
 full screen, works offline, and on desktop Chrome/Edge can open `.artproj` and
 image files directly.
 
 ## Supported browsers and devices
 
-| Platform | Browser | Notes |
-| --- | --- | --- |
-| Windows, macOS, Linux | Chrome / Edge 92+ | Best support: native open/save dialogs, file handling when installed |
-| Windows, macOS, Linux | Firefox 113+ | Files are saved as downloads |
-| macOS | Safari 16.4+ | WebP export not available (Safari cannot encode WebP) |
-| Android phones & tablets | Chrome | Pen pressure (e.g. S Pen) supported |
-| iPhone & iPad | Safari 16.4+ | Apple Pencil pressure supported; iPhone has no fullscreen API — install to the Home Screen for a full-screen app |
-| Touchscreen Windows devices | Chrome / Edge | Pen, touch and mouse all work |
+| Platform                    | Browser           | Notes                                                                                                            |
+| --------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Windows, macOS, Linux       | Chrome / Edge 92+ | Best support: native open/save dialogs, file handling when installed                                             |
+| Windows, macOS, Linux       | Firefox 113+      | Files are saved as downloads                                                                                     |
+| macOS                       | Safari 16.4+      | WebP export not available (Safari cannot encode WebP)                                                            |
+| Android phones & tablets    | Chrome            | Pen pressure (e.g. S Pen) supported                                                                              |
+| iPhone & iPad               | Safari 16.4+      | Apple Pencil pressure supported; iPhone has no fullscreen API — install to the Home Screen for a full-screen app |
+| Touchscreen Windows devices | Chrome / Edge     | Pen, touch and mouse all work                                                                                    |
 
 ## Development
 
@@ -216,7 +223,7 @@ Key design decisions:
   streams), so a sprite exported from Art has exactly the pixels you drew.
   Images with up to 256 colors are written as compact indexed PNGs.
 - **One paint engine.** Brushes, pencil, eraser, shapes and fill write
-  *coverage* into a mask; pixels are recomputed from the original tile data.
+  _coverage_ into a mask; pixels are recomputed from the original tile data.
   This gives uniform stroke opacity, live shape previews, selection clipping
   and alpha lock in one place.
 - **Cheap undo.** Edits record only the 64×64 tiles they touched; undo and redo

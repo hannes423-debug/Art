@@ -15,8 +15,11 @@
  */
 
 export interface AnimatedThumb {
-  /** Frames side by side, each frameW × frameH. */
-  strip: Blob;
+  /**
+   * Frames side by side, each frameW × frameH: a stored PNG (decoded only
+   * while visible) or a live canvas (e.g. the timeline preview).
+   */
+  strip: Blob | HTMLCanvasElement;
   frameW: number;
   frameH: number;
   durations: number[];
@@ -31,7 +34,7 @@ interface Item {
   total: number;
   frame: number;
   visible: boolean;
-  bitmap: ImageBitmap | null;
+  bitmap: ImageBitmap | HTMLCanvasElement | null;
   loading: boolean;
   releaseTimer: number;
 }
@@ -89,14 +92,21 @@ export class ThumbAnimator {
     return () => this.detach(canvas);
   }
 
+  /** Redraws a thumbnail whose strip canvas was repainted (same size and timing). */
+  refresh(canvas: HTMLCanvasElement): void {
+    const it = this.items.get(canvas);
+    if (!it || !it.bitmap) return;
+    it.frame = -1;
+    this.draw(it, this.enabled ? this.frameAt(it, performance.now()) : 0);
+  }
+
   detach(canvas: HTMLCanvasElement): void {
     const it = this.items.get(canvas);
     if (!it) return;
     this.items.delete(canvas);
     this.observer?.unobserve(canvas);
     clearTimeout(it.releaseTimer);
-    it.bitmap?.close();
-    it.bitmap = null;
+    release(it);
   }
 
   private observe(): IntersectionObserver {
@@ -112,8 +122,7 @@ export class ThumbAnimator {
             else {
               it.releaseTimer = window.setTimeout(() => {
                 if (it.visible) return;
-                it.bitmap?.close();
-                it.bitmap = null;
+                release(it);
                 it.frame = -1;
               }, RELEASE_MS);
             }
@@ -128,9 +137,18 @@ export class ThumbAnimator {
 
   private async load(it: Item): Promise<void> {
     if (it.bitmap || it.loading) return;
+    const strip = it.thumb.strip;
+    if (strip instanceof HTMLCanvasElement) {
+      // A live strip needs no decoding.
+      it.bitmap = strip;
+      it.frame = -1;
+      this.draw(it, this.enabled ? this.frameAt(it, performance.now()) : 0);
+      this.schedule();
+      return;
+    }
     it.loading = true;
     try {
-      const bmp = await createImageBitmap(it.thumb.strip);
+      const bmp = await createImageBitmap(strip);
       if (!this.items.has(it.canvas)) {
         bmp.close();
         return;
@@ -199,6 +217,12 @@ export class ThumbAnimator {
     for (const it of this.items.values()) if (it.visible && it.bitmap) this.draw(it, this.frameAt(it, now));
     this.schedule();
   }
+}
+
+/** Frees a decoded strip (a live canvas strip belongs to its owner and is kept). */
+function release(it: Item): void {
+  if (it.bitmap instanceof ImageBitmap) it.bitmap.close();
+  it.bitmap = null;
 }
 
 /** The one animator shared by every thumbnail in the app. */

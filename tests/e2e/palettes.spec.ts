@@ -128,3 +128,91 @@ test('editing a built-in palette makes an edited copy and leaves the built-in al
   await page.evaluate(() => (window as any).art.editor.selectPalette({ kind: 'builtin', id: 'pico8' }));
   await expect(page.locator('.color-panel .cp-swatches.palette .swatch')).toHaveCount(16);
 });
+
+test('drag colors to reorder them in the palette editor', async ({ page }) => {
+  await newImage(page, 8, 8);
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    e.createCustomPalette('Three', [
+      { r: 255, g: 0, b: 0, a: 255 },
+      { r: 0, g: 255, b: 0, a: 255 },
+      { r: 0, g: 0, b: 255, a: 255 },
+    ]);
+    (window as any).art.showPalettes();
+  });
+  await page.locator('dialog.dialog').last().locator('.pal-row', { hasText: 'Three' }).getByRole('button', { name: 'Edit' }).click();
+  const ed = page.locator('dialog.dialog').last();
+  const sw = ed.locator('.pal-edit-grid .swatch');
+  const a = (await sw.nth(0).boundingBox())!;
+  const c = (await sw.nth(2).boundingBox())!;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(a.x + a.width, a.y + a.height / 2, { steps: 3 });
+  await page.mouse.move(c.x + c.width / 2, c.y + c.height / 2, { steps: 6 });
+  await page.mouse.up();
+  const order = await page.evaluate(() => (window as any).art.editor.palette.map((c: any) => [c.r, c.g, c.b]));
+  expect(order).toEqual([
+    [0, 255, 0],
+    [0, 0, 255],
+    [255, 0, 0],
+  ]);
+  // The dragged color stays selected; the buttons still work.
+  await expect(sw.nth(2)).toHaveAttribute('aria-selected', 'true');
+  await ed.getByRole('button', { name: '◀ Move' }).click();
+  expect(await page.evaluate(() => (window as any).art.editor.palette[1].r)).toBe(255);
+});
+
+test('export all my palettes and import them on another device; lock is remembered per palette', async ({ page }) => {
+  await newImage(page, 8, 8);
+  await page.evaluate(() => {
+    const e = (window as any).art.editor;
+    e.createCustomPalette('Skin', [
+      { r: 255, g: 204, b: 153, a: 255 },
+      { r: 170, g: 102, b: 68, a: 128 },
+    ]);
+    e.createCustomPalette('Night', [{ r: 10, g: 10, b: 40, a: 255 }]);
+    (window as any).art.showPalettes();
+  });
+  const download = page.waitForEvent('download');
+  await page.locator('dialog.dialog').last().getByRole('button', { name: 'Export all…' }).click();
+  const file = await download;
+  const path = (await file.path())!;
+  // “Another device”: nothing saved.
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.waitForFunction(() => !!(window as any).art);
+  expect(await page.evaluate(() => (window as any).art.editor.customPalettes.length)).toBe(0);
+  await page.evaluate(() => (window as any).art.showPalettes());
+  for (let round = 0; round < 2; round++) {
+    const chooser = page.waitForEvent('filechooser');
+    await page.locator('dialog.dialog').last().getByRole('button', { name: 'Import…' }).click();
+    await (await chooser).setFiles(path);
+    await expect(page.locator('.toast').last()).toContainText(round ? '0 palettes (2 already saved)' : 'Imported 2 palettes');
+  }
+  const saved = await page.evaluate(() =>
+    (window as any).art.editor.customPalettes.map((p: any) => [p.name, p.colors.length, p.colors[p.colors.length - 1].a]),
+  );
+  expect(saved).toEqual([
+    ['Skin', 2, 128],
+    ['Night', 1, 255],
+  ]);
+  await expect(page.locator('dialog.dialog').last().locator('.pal-row', { hasText: 'Night' })).toBeVisible();
+
+  // Lock on for PICO-8, off for Game Boy: switching palettes restores each one's choice.
+  const lockAfter = (id: string) =>
+    page.evaluate((id) => {
+      const e = (window as any).art.editor;
+      e.selectPalette({ kind: 'builtin', id });
+      return e.settings.paletteLock;
+    }, id);
+  await lockAfter('pico8');
+  await page.evaluate(() => (window as any).art.editor.setPaletteLock(true));
+  await lockAfter('gameboy');
+  await page.evaluate(() => (window as any).art.editor.setPaletteLock(false));
+  expect(await lockAfter('pico8')).toBe(true);
+  expect(await lockAfter('gameboy')).toBe(false);
+  await page.evaluate(() => (window as any).art.editor.persistNow());
+  await page.reload();
+  await page.waitForFunction(() => !!(window as any).art);
+  expect(await lockAfter('pico8')).toBe(true);
+});

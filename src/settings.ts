@@ -71,6 +71,8 @@ export interface PersistedState {
   paletteRef?: string;
   /** The user's saved palettes. */
   customPalettes?: { id: string; name: string; colors: string[] }[];
+  /** Palette lock remembered per palette ('builtin:<id>' / 'custom:<id>' → on/off). */
+  paletteLocks?: Record<string, boolean>;
   recent: string[];
   tool: ToolId;
 }
@@ -111,6 +113,10 @@ export function loadState(): Partial<PersistedState> & { settings: Settings; opt
           .filter((p) => p && typeof p.id === 'string' && typeof p.name === 'string' && Array.isArray(p.colors))
           .map((p) => ({ id: p.id as string, name: p.name as string, colors: (p.colors as unknown[]).filter((c): c is string => typeof c === 'string') }))
       : undefined,
+    paletteLocks:
+      stored.paletteLocks && typeof stored.paletteLocks === 'object' && !Array.isArray(stored.paletteLocks)
+        ? Object.fromEntries(Object.entries(stored.paletteLocks as Record<string, unknown>).filter((e): e is [string, boolean] => typeof e[1] === 'boolean'))
+        : undefined,
     recent: Array.isArray(stored.recent) ? (stored.recent as string[]).filter((s) => typeof s === 'string') : undefined,
     tool: typeof stored.tool === 'string' ? (stored.tool as ToolId) : undefined,
   };

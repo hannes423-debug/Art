@@ -78,6 +78,8 @@ export class Editor extends Emitter<EditorEvents> {
   paletteName = 'DawnBringer 32';
   paletteRef: PaletteRef = { kind: 'builtin', id: 'db32' };
   customPalettes: CustomPalette[] = [];
+  /** Palette lock as last set for each palette (keyed like paletteRef). */
+  paletteLocks: Record<string, boolean> = {};
   recent: RGBA[] = [];
   options: ToolOptions;
   settings: Settings;
@@ -108,6 +110,7 @@ export class Editor extends Emitter<EditorEvents> {
     else if (state.palette) this.paletteName = 'Palette'; // saved by an older version: unknown origin
     if (state.paletteRef !== undefined) this.paletteRef = parseRef(state.paletteRef);
     else if (state.palette) this.paletteRef = null;
+    this.paletteLocks = { ...(state.paletteLocks ?? {}) };
     this.recent = state.recent?.map((h) => parseHex(h)).filter((c): c is RGBA => !!c) ?? [];
 
     const lowMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
@@ -296,6 +299,9 @@ export class Editor extends Emitter<EditorEvents> {
     }
     this.paletteRef = ref;
     this.snapFinder = null;
+    // Each palette remembers whether it was locked.
+    const lock = this.paletteLocks[refKey(ref)];
+    if (lock !== undefined && lock !== this.settings.paletteLock) this.updateSettings({ paletteLock: lock });
     if (this.settings.paletteLock) {
       this.fg = this.snapColor(this.fg);
       this.bg = this.snapColor(this.bg);
@@ -308,13 +314,41 @@ export class Editor extends Emitter<EditorEvents> {
 
   /** Saves colors as a new custom palette and makes it the working palette. */
   createCustomPalette(name: string, colors: RGBA[]): CustomPalette {
-    const ids = new Set(this.customPalettes.map((p) => p.id));
+    const p: CustomPalette = { id: this.newPaletteId(), name: name.trim() || 'My palette', colors: colors.map((c) => ({ ...c })) };
+    this.customPalettes = [...this.customPalettes, p];
+    this.selectPalette({ kind: 'custom', id: p.id });
+    return p;
+  }
+
+  /**
+   * Adds palettes to My palettes without changing the working palette (e.g.
+   * from a bundle exported on another device). Palettes already saved with
+   * the same name and colors are skipped. Returns how many were added.
+   */
+  addCustomPalettes(list: { name: string; colors: RGBA[] }[]): number {
+    const key = (name: string, colors: RGBA[]) => `${name}|${colors.map((c) => toHex(c, true)).join(',')}`;
+    const have = new Set(this.customPalettes.map((p) => key(p.name, p.colors)));
+    const added: CustomPalette[] = [];
+    for (const p of list) {
+      const name = p.name.trim() || 'My palette';
+      const k = key(name, p.colors);
+      if (have.has(k) || !p.colors.length) continue;
+      have.add(k);
+      const id = this.newPaletteId([...added.map((a) => a.id)]);
+      added.push({ id, name, colors: p.colors.map((c) => ({ ...c })) });
+    }
+    if (!added.length) return 0;
+    this.customPalettes = [...this.customPalettes, ...added];
+    this.emit('palette');
+    this.persist();
+    return added.length;
+  }
+
+  private newPaletteId(taken: string[] = []): string {
+    const ids = new Set([...this.customPalettes.map((p) => p.id), ...taken]);
     let id = `p${Date.now().toString(36)}`;
     while (ids.has(id)) id += 'x';
-    const p: CustomPalette = { id, name: name.trim() || 'My palette', colors: colors.map((c) => ({ ...c })) };
-    this.customPalettes = [...this.customPalettes, p];
-    this.selectPalette({ kind: 'custom', id });
-    return p;
+    return id;
   }
 
   updateCustomPalette(id: string, patch: { name?: string; colors?: RGBA[] }): void {
@@ -334,6 +368,7 @@ export class Editor extends Emitter<EditorEvents> {
   /** Deletes a saved palette. If it is in use, its colors stay as an unsaved palette. */
   deleteCustomPalette(id: string): void {
     this.customPalettes = this.customPalettes.filter((p) => p.id !== id);
+    delete this.paletteLocks[refKey({ kind: 'custom', id })];
     if (this.paletteRef?.kind === 'custom' && this.paletteRef.id === id) this.paletteRef = null;
     this.emit('palette');
     this.persist();
@@ -360,6 +395,10 @@ export class Editor extends Emitter<EditorEvents> {
 
   setPaletteLock(on: boolean): void {
     this.updateSettings({ paletteLock: on });
+    if (this.paletteRef) {
+      this.paletteLocks[refKey(this.paletteRef)] = on;
+      this.persist();
+    }
     if (on) {
       if (!this.palette.length) this.toast('The palette is empty: add colors to lock to.');
       this.fg = this.snapColor(this.fg);
@@ -694,12 +733,17 @@ export class Editor extends Emitter<EditorEvents> {
       bg: toHex(this.bg, true),
       palette: this.palette.map((c) => toHex(c, true)),
       paletteName: this.paletteName,
-      paletteRef: this.paletteRef ? `${this.paletteRef.kind}:${this.paletteRef.id}` : '',
+      paletteRef: this.paletteRef ? refKey(this.paletteRef) : '',
+      paletteLocks: this.paletteLocks,
       customPalettes: this.customPalettes.map((p) => ({ id: p.id, name: p.name, colors: p.colors.map((c) => toHex(c, true)) })),
       recent: this.recent.map((c) => toHex(c, true)),
       tool: this.tool.id,
     });
   }
+}
+
+function refKey(ref: Exclude<PaletteRef, null>): string {
+  return `${ref.kind}:${ref.id}`;
 }
 
 function parseRef(s: string): PaletteRef {

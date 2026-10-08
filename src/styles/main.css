@@ -1407,6 +1407,26 @@ button:disabled {
   flex: none;
 }
 
+.tl-preview {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--checker);
+  background-size: 8px 8px;
+}
+
+.tl-preview[hidden] {
+  display: none;
+}
+
+.tl-preview canvas {
+  image-rendering: pixelated;
+}
+
 .tl-frames {
   display: flex;
   flex: 1;
@@ -2648,6 +2668,21 @@ input[type='range']::-moz-range-thumb {
   max-height: 40vh;
   overflow-y: auto;
   padding: 4px;
+}
+
+.pal-edit-grid .swatch {
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.pal-edit-grid.reordering .swatch {
+  cursor: grabbing;
+}
+
+.pal-edit-grid .swatch.dragging {
+  transform: scale(1.15);
+  z-index: 1;
 }
 
 .pal-edit-grid .swatch.selected {

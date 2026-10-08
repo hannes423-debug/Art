@@ -61,3 +61,45 @@ describe('default animation for previews', () => {
     expect(d.animationOrder(3)).toEqual([2, 3, 4, 3]);
   });
 });
+
+describe('chosen thumbnail animation', () => {
+  it('plays the chosen tag wherever the active frame is, and is saved with the project', async () => {
+    const { deserializeProject, projectToJSON } = await import('../../src/io/project');
+    const d = ArtDocument.createBlank(2, 2);
+    const h = new History();
+    for (let i = 0; i < 4; i++) addFrame(d, h, 'empty');
+    setTags(d, h, [
+      { name: 'idle', from: 0, to: 1, color: '#5aa9ff', direction: 'forward' },
+      { name: 'walk', from: 2, to: 4, color: '#ff6b6b', direction: 'reverse' },
+    ]);
+    expect(d.thumbnailOrder(0)).toEqual([0, 1]);
+    d.thumbnailTag = 'walk';
+    expect(d.thumbnailOrder(0)).toEqual([4, 3, 2]);
+    const json = await projectToJSON(d, { palette: [], grid: { enabled: false, width: 8, height: 8 } });
+    expect(JSON.parse(json).thumbnailTag).toBe('walk');
+    expect((await deserializeProject(json)).doc.thumbnailTag).toBe('walk');
+    // A name with no matching tag is ignored.
+    const parsed = JSON.parse(json);
+    parsed.thumbnailTag = 'run';
+    const back = (await deserializeProject(parsed)).doc;
+    expect(back.thumbnailTag).toBeNull();
+    expect(back.thumbnailOrder(3)).toEqual([4, 3, 2]);
+  });
+});
+
+describe('preview strips', () => {
+  it('keep the loop length when frames are dropped, and never enlarge', async () => {
+    const { previewFrames, renderStrip } = await import('../../src/core/thumbnail');
+    const d = ArtDocument.createBlank(8, 4);
+    const h = new History();
+    for (let i = 0; i < 9; i++) addFrame(d, h, 'empty');
+    const order = d.animationOrder(0);
+    const { order: kept, durations } = previewFrames(d, order, 4);
+    expect(kept).toHaveLength(4);
+    expect(durations.reduce((a, b) => a + b, 0)).toBe(order.reduce((a, f) => a + d.frames[f].duration, 0));
+    const s = renderStrip(d, kept, 96);
+    expect([s.frameW, s.frameH, s.width, s.height]).toEqual([8, 4, 32, 4]);
+    const small = renderStrip(d, kept, 4);
+    expect([small.frameW, small.frameH]).toEqual([4, 2]);
+  });
+});

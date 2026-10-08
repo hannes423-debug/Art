@@ -8,6 +8,7 @@ import type { ProjectMeta } from '../io/storage';
 import { colorMask, countOffPalette, mapToPalette, replaceColor, resizeCanvas, scaleImage, setTags } from '../ops';
 import type { TouchMode } from '../settings';
 import { type TimelapseFormat, videoMime } from '../timelapse-export';
+import type { ThumbnailAnimation } from '../io/storage';
 import { crispSize, thumbAnimator } from './thumb-animator';
 import { type TextFont, type TextStyle, renderText } from '../tools/text-render';
 import { checkbox, confirmDialog, field, numberInput, openDialog, readNumber, selectInput } from './dialog';
@@ -546,6 +547,7 @@ export function tagDialog(app: App, index: number | null): void {
     TAG_COLORS.map((c, i) => ({ value: c, label: ['Blue', 'Red', 'Green', 'Orange', 'Purple', 'Teal', 'Pink', 'Gray'][i] })),
     existing?.color ?? TAG_COLORS[doc.tags.length % TAG_COLORS.length],
   );
+  const thumb = checkbox('Show this animation in the project thumbnail', !!existing && doc.thumbnailTag === existing.name);
   const save = (): false | void => {
     const a = readNumber(from, 1, n, 1) - 1;
     const b = readNumber(to, 1, n, n) - 1;
@@ -560,6 +562,13 @@ export function tagDialog(app: App, index: number | null): void {
     if (index === null) tags.push(tag);
     else tags[index] = tag;
     setTags(doc, e.history, tags, index === null ? 'New tag' : 'Edit tag');
+    // The thumbnail choice follows renames; it is a project setting (saved, not undone).
+    const wasThumb = !!existing && doc.thumbnailTag === existing.name;
+    const next = thumb.input.checked ? tag.name : wasThumb ? null : doc.thumbnailTag;
+    if (next !== doc.thumbnailTag) {
+      doc.thumbnailTag = next;
+      e.markChanged();
+    }
   };
   openDialog({
     title: existing ? 'Edit tag' : 'New tag',
@@ -567,7 +576,12 @@ export function tagDialog(app: App, index: number | null): void {
       field('Name', name),
       h('div', { class: 'row' }, field('From frame', from), field('To frame', to)),
       h('div', { class: 'row' }, field('Direction', direction), field('Color', color)),
-      h('p', { class: 'field-hint' }, 'Playing inside a tag loops just that animation. Tags are exported in the sprite sheet frame data.'),
+      thumb.el,
+      h(
+        'p',
+        { class: 'field-hint' },
+        'Playing inside a tag loops just that animation. Tags are exported in the sprite sheet frame data. Without a thumbnail tag, the project list plays the animation around the frame you were on.',
+      ),
     ],
     buttons: [
       ...(existing
@@ -1131,19 +1145,19 @@ export function projectsDialog(app: App, projects: ProjectMeta[]): void {
       list.append(h('p', { class: 'empty' }, 'No saved projects yet. Anything you draw is saved here automatically.'));
       return;
     }
+    const upgrades: (() => Promise<unknown>)[] = [];
     for (const p of items) {
       const thumb = h('div', { class: 'project-thumb' });
-      const animated = p.anim && p.anim.durations.length > 1 && app.editor.settings.animatedThumbs;
-      if (animated) {
+      const showAnim = (a: ThumbnailAnimation) => {
         // Animated preview, played by the shared animator (removed with the dialog).
-        const a = p.anim!;
         const size = crispSize(a.frameW, a.frameH, THUMB_BOX);
         const c = h('canvas', { class: 'project-anim', 'aria-label': `Animated preview, ${a.durations.length} frames` });
         c.style.width = `${size.w}px`;
         c.style.height = `${size.h}px`;
-        thumb.append(c);
+        thumb.replaceChildren(c);
         thumbAnimator.attach(c, a);
-      } else if (p.thumbnail) {
+      };
+      if (p.thumbnail) {
         const url = URL.createObjectURL(p.thumbnail);
         urls.push(url);
         const img = h('img', { src: url, alt: '', loading: 'lazy' });
@@ -1154,6 +1168,11 @@ export function projectsDialog(app: App, projects: ProjectMeta[]): void {
           img.style.height = `${size.h}px`;
         });
         thumb.append(img);
+      }
+      if (app.editor.settings.animatedThumbs && p.frames > 1) {
+        if (p.anim && p.anim.durations.length > 1) showAnim(p.anim);
+        // Saved before animated previews existed: build it in the background.
+        else if (!p.anim) upgrades.push(() => app.upgradeLibraryThumbnail(p.id).then((a) => a && thumb.isConnected && showAnim(a)));
       }
       const isCurrent = app.editor.info.projectId === p.id;
       const open = h(
@@ -1181,6 +1200,13 @@ export function projectsDialog(app: App, projects: ProjectMeta[]): void {
       });
       list.append(h('div', { class: `project-item ${isCurrent ? 'current' : ''}`.trim() }, open, h('div', { class: 'project-actions' }, dl, del)));
     }
+    // One at a time, so a long list never blocks the page.
+    void (async () => {
+      for (const run of upgrades) {
+        if (!list.isConnected) break;
+        await run().catch(() => {});
+      }
+    })();
   };
   render(projects);
 }

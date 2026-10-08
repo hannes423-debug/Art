@@ -1,9 +1,10 @@
 import type { App } from './app';
 import { compositeFrame, compositeSampled, sampleGrid } from './core/composite';
+import { previewFrames, previewKey, renderStrip } from './core/thumbnail';
 import { ArtDocument } from './core/document';
 import { cropPixels, resizePixels } from './core/imageops';
 import { Layer } from './core/layer';
-import { paletteNameFromFile, parsePalette, toGpl, toHexList } from './core/palette';
+import { paletteNameFromFile, parsePalette, parsePaletteBundle, toGpl, toHexList, toPaletteBundle } from './core/palette';
 import { type Pixels, Surface, allocPixels } from './core/surface';
 import type { DocumentInfo } from './editor';
 import { type FileType, type PickedFile, downloadBlob, fileNameFor, hasFileSystemAccess, pickFiles, saveFileAs, shareFile, writeToHandle } from './io/files';
@@ -20,6 +21,7 @@ import {
   newProjectId,
   requestPersistence,
   saveProject,
+  setProjectAnimation,
   setLastProjectId,
 } from './io/storage';
 import { confirmDialog } from './ui/dialog';
@@ -198,54 +200,39 @@ export class ProjectFiles {
    * frame's duration, as a strip of small frames. Rebuilt only when the
    * frames, cels, layers or timing change.
    */
-  private async animatedThumbnail(doc: ArtDocument): Promise<ThumbnailAnimation | undefined> {
-    let order = doc.animationOrder(doc.activeFrame);
-    if (order.length < 2) return undefined;
-    let durations = order.map((f) => doc.frames[f].duration);
-    if (order.length > ANIM_MAX_FRAMES) {
-      // Keep the timing: each kept frame shows for the frames it stands for.
-      const keep: number[] = [];
-      const dur: number[] = [];
-      const step = order.length / ANIM_MAX_FRAMES;
-      for (let i = 0; i < ANIM_MAX_FRAMES; i++) {
-        const a = Math.floor(i * step);
-        const b = Math.floor((i + 1) * step);
-        keep.push(order[a]);
-        dur.push(durations.slice(a, b).reduce((x, y) => x + y, 0));
-      }
-      order = keep;
-      durations = dur;
-    }
-    const key = [
-      doc.width,
-      doc.height,
-      order.join('.'),
-      durations.join('.'),
-      doc.groups.map((g) => `${g.id}:${g.visible}:${g.opacity}`).join(','),
-      doc.layers
-        .map((l) => `${l.id}:${l.visible}:${l.opacity}:${l.blendMode}:${l.group}:${order.map((f) => `${l.cels[f].id}v${l.cels[f].version}`).join('/')}`)
-        .join(','),
-    ].join('|');
-    if (this.animCache?.key === key) return this.animCache.anim;
-    const k = Math.min(1, ANIM_FRAME_MAX / Math.max(doc.width, doc.height));
-    const fw = Math.max(1, Math.round(doc.width * k));
-    const fh = Math.max(1, Math.round(doc.height * k));
-    const xs = sampleGrid(fw, doc.width);
-    const ys = sampleGrid(fh, doc.height);
-    const W = fw * order.length;
-    const strip = allocPixels(W, fh);
-    order.forEach((f, i) => {
-      const px = compositeSampled(doc, f, xs, ys);
-      for (let y = 0; y < fh; y++) strip.set(px.subarray(y * fw * 4, (y + 1) * fw * 4), (y * W + i * fw) * 4);
-    });
+  private async animatedThumbnail(doc: ArtDocument, useCache = true): Promise<ThumbnailAnimation | undefined> {
+    const all = doc.thumbnailOrder(doc.activeFrame);
+    if (all.length < 2) return undefined;
+    const { order, durations } = previewFrames(doc, all, ANIM_MAX_FRAMES);
+    const key = previewKey(doc, order, durations);
+    if (useCache && this.animCache?.key === key) return this.animCache.anim;
+    const strip = renderStrip(doc, order, ANIM_FRAME_MAX);
     const anim: ThumbnailAnimation = {
-      strip: new Blob([(await encodePNG(W, fh, strip)) as Uint8Array<ArrayBuffer>], { type: 'image/png' }),
-      frameW: fw,
-      frameH: fh,
+      strip: new Blob([(await encodePNG(strip.width, strip.height, strip.data)) as Uint8Array<ArrayBuffer>], { type: 'image/png' }),
+      frameW: strip.frameW,
+      frameH: strip.frameH,
       durations,
     };
-    this.animCache = { key, anim };
+    if (useCache) this.animCache = { key, anim };
     return anim;
+  }
+
+  /**
+   * Builds the animated preview of a project saved before previews existed
+   * (or saved with a different preview setting) and stores it with the
+   * project. Returns it, or undefined for single-frame projects.
+   */
+  async upgradeLibraryThumbnail(id: string): Promise<ThumbnailAnimation | undefined> {
+    const row = await loadProject(id);
+    if (!row || (row.meta.frames ?? 1) < 2) return undefined;
+    const { doc } = await deserializeProject(row.data);
+    try {
+      const anim = await this.animatedThumbnail(doc, false);
+      if (anim) await setProjectAnimation(id, anim);
+      return anim;
+    } finally {
+      doc.dispose();
+    }
   }
 
   /**
@@ -674,9 +661,20 @@ export class ProjectFiles {
   // ------------------------------------------------------------ Palettes
 
   async importPalette(): Promise<void> {
-    const files = await pickFiles([{ description: 'Palettes', accept: { 'text/plain': ['.gpl', '.hex', '.txt', '.pal'] } }]);
+    const files = await pickFiles([{ description: 'Palettes', accept: { 'text/plain': ['.gpl', '.hex', '.txt', '.pal'], 'application/json': ['.json'] } }]);
     if (!files.length) return;
     const text = await files[0].file.text();
+    const bundle = parsePaletteBundle(text);
+    if (bundle) {
+      // "My palettes" exported from another device.
+      const added = this.editor.addCustomPalettes(bundle);
+      const skipped = bundle.length - added;
+      this.app.toast(
+        bundle.length ? `Imported ${added} palette${added === 1 ? '' : 's'}${skipped ? ` (${skipped} already saved)` : ''}` : 'That palette file is empty',
+        !bundle.length,
+      );
+      return;
+    }
     const colors = parsePalette(text);
     if (!colors) {
       this.app.toast('No colors found in that file', true);
@@ -687,6 +685,18 @@ export class ProjectFiles {
     this.editor.createCustomPalette(name, colors);
     this.editor.markChanged();
     this.app.toast(`Imported “${name}” (${colors.length} colors)`);
+  }
+
+  /** Saves every palette in My palettes as one file (to move them to another device). */
+  async exportPaletteBundle(): Promise<void> {
+    const list = this.editor.customPalettes;
+    if (!list.length) {
+      this.app.toast('My palettes is empty: create, copy or import a palette first');
+      return;
+    }
+    await saveFileAs(new Blob([toPaletteBundle(list)], { type: 'application/json' }), 'my-palettes.art-palettes.json', [
+      { description: 'Palette collection', accept: { 'application/json': ['.json'] } },
+    ]);
   }
 
   async exportPalette(format: 'gpl' | 'hex', name = this.editor.paletteName, colors = this.editor.palette): Promise<void> {
