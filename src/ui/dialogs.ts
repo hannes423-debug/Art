@@ -5,7 +5,7 @@ import type { MorphShape } from '../core/morphology';
 import { type ExportFormat, isAnimatedFormat } from '../io/image';
 import { canShareFile } from '../io/files';
 import type { ProjectMeta } from '../io/storage';
-import { colorMask, mapToPalette, replaceColor, resizeCanvas, scaleImage, setTags } from '../ops';
+import { colorMask, countOffPalette, mapToPalette, replaceColor, resizeCanvas, scaleImage, setTags } from '../ops';
 import type { TouchMode } from '../settings';
 import { type TimelapseFormat, videoMime } from '../timelapse-export';
 import { type TextFont, type TextStyle, renderText } from '../tools/text-render';
@@ -410,7 +410,7 @@ export function replaceColorDialog(app: App): void {
 
 // ------------------------------------------------------------- Map to palette
 
-const mapDefaults = { allLayers: false, allFrames: false, dither: false };
+const mapDefaults = { allLayers: false, allFrames: false, dither: false, keepOriginal: true };
 
 export function mapToPaletteDialog(app: App): void {
   const e = app.editor;
@@ -423,7 +423,19 @@ export function mapToPaletteDialog(app: App): void {
   const layers = checkbox('All visible layers', d.allLayers);
   const frames = checkbox('All frames', d.allFrames);
   const dither = checkbox('Dither (mix the two nearest colors)', d.dither);
-  const content: Node[] = [h('p', null, `Every color is replaced by the nearest of the ${n} palette colors. Transparency is kept.`), layers.el];
+  const keep = checkbox('Keep the original (map onto copies of the layers and hide the originals)', d.keepOriginal);
+  const off = countOffPalette(e.doc, e.palette);
+  const content: Node[] = [
+    h(
+      'p',
+      null,
+      off
+        ? `${off >= 4096 ? 'Over 4000' : off} color${off === 1 ? '' : 's'} in this image ${off === 1 ? 'is' : 'are'} not in “${e.paletteName}”. Each is replaced by the nearest of its ${n} colors; transparency is kept.`
+        : `Every color is already in “${e.paletteName}” (${n} colors).`,
+    ),
+    keep.el,
+    layers.el,
+  ];
   if (e.doc.frames.length > 1) content.push(frames.el);
   content.push(dither.el);
   if (e.doc.selection.active) content.push(h('p', { class: 'field-hint' }, 'Only pixels inside the selection are changed.'));
@@ -439,10 +451,15 @@ export function mapToPaletteDialog(app: App): void {
           d.allLayers = layers.input.checked;
           d.allFrames = frames.input.checked && e.doc.frames.length > 1;
           d.dither = dither.input.checked;
+          d.keepOriginal = keep.input.checked;
           e.commitFloating();
           if (!d.allLayers && !e.canEditPixels()) return;
-          const changed = mapToPalette(e.doc, e.history, e.palette, d);
-          e.toast(changed ? `Changed ${changed} pixel${changed === 1 ? '' : 's'}` : 'All colors are already in the palette');
+          const changed = mapToPalette(e.doc, e.history, e.palette, { ...d, label: e.paletteName });
+          e.toast(
+            changed
+              ? `Changed ${changed} pixel${changed === 1 ? '' : 's'}${d.keepOriginal ? ' on copies — the originals are hidden below them' : ''}`
+              : 'All colors are already in the palette',
+          );
         },
       },
     ],

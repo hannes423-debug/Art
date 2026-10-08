@@ -66,7 +66,8 @@ fast and canvas-first.
 - Sprite sheet import (slice by cell size, offset and gap) and export (strip or grid, with padding and frame-data JSON)
 - Export scaled up 2×–16× without blurring
 - Palette lock: every painted color (including brush blending and gradients) snaps to the palette; Map colors to palette (with optional dithering) converts existing art
-- Palettes: DawnBringer 32, PICO-8, Game Boy, grayscale; import GIMP `.gpl`, `.hex` and JASC `.pal`; export `.gpl` and `.hex`; extract colors from a layer
+- Palettes: a palette browser with built-in console and artist palettes (Game Boy, Game Boy Pocket, GBA-style and SNES-style 15-bit palettes, NES, PICO-8, Commodore 64, DawnBringer 16/32, Endesga 32, Sweetie 16, grayscale, 1-bit) and **your own palettes**: create, rename, edit colors, add/remove, reorder, sort, round to 15-bit, duplicate, delete. Switch quickly from the palette name in the color panel. Import GIMP `.gpl`, `.hex`/`.txt` and JASC `.pal` (saved to your palettes); export `.gpl` and `.hex`; extract colors from a layer
+- Map colors to palette converts an image to the selected palette — by default onto copies of the layers, keeping the originals (hidden) underneath
 
 **Color**
 - Foreground/background colors, HSV picker, hex and RGBA input, alpha, recent colors, palette swatches

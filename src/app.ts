@@ -29,9 +29,11 @@ import {
   shortcutsDialog,
 } from './ui/dialogs';
 import { h, icon, iconButton, isTyping } from './ui/dom';
+import type { RGBA } from './core/color';
 import { fileNameFor, pickFiles, saveFileAs } from './io/files';
 import { LayersPanel } from './ui/layers-panel';
 import { QuickBar } from './ui/quick-bar';
+import { paletteBrowserDialog, paletteSwitchItems } from './ui/palette-browser';
 import { TimelapseRecorder } from './timelapse';
 import { type TimelapseFormat, renderTimelapse } from './timelapse-export';
 import type { TextTool } from './tools/extra-tools';
@@ -116,6 +118,8 @@ export class App {
       importPalette: () => void this.files.importPalette(),
       exportPalette: (f) => void this.files.exportPalette(f),
       showMapToPalette: () => this.showMapToPalette(),
+      showPalettes: () => this.showPalettes(),
+      switchItems: () => paletteSwitchItems(this),
     });
     this.layersPanel = new LayersPanel(e);
     this.timelapse = new TimelapseRecorder(e);
@@ -720,6 +724,18 @@ export class App {
     } finally {
       this.setBusy(false);
     }
+  }
+
+  showPalettes(): void {
+    paletteBrowserDialog(this);
+  }
+
+  importPaletteFile(): Promise<void> {
+    return this.files.importPalette();
+  }
+
+  exportPaletteColors(name: string, colors: RGBA[], format: 'gpl' | 'hex'): Promise<void> {
+    return this.files.exportPalette(format, name, colors);
   }
 
   showMapToPalette(): void {

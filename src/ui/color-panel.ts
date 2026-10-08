@@ -1,5 +1,5 @@
 import { type HSV, type RGBA, colorsEqual, hsvToRgb, parseHex, rgbToHsv, toCss, toHex } from '../core/color';
-import { PALETTE_PRESETS, extractColors, presetColors } from '../core/palette';
+import { extractColors } from '../core/palette';
 import type { Editor } from '../editor';
 import { h, iconButton } from './dom';
 import { type PopupItem, popupMenu } from './menu';
@@ -8,6 +8,10 @@ export interface PaletteIO {
   importPalette(): void;
   exportPalette(format: 'gpl' | 'hex'): void;
   showMapToPalette(): void;
+  /** Opens the palette browser. */
+  showPalettes(): void;
+  /** Items for the quick palette switcher. */
+  switchItems(): (PopupItem | '-')[];
 }
 
 /**
@@ -36,6 +40,8 @@ export class ColorPanel {
   private nums: Record<'r' | 'g' | 'b' | 'a', HTMLInputElement>;
   private recentRow = h('div', { class: 'cp-swatches recent', 'aria-label': 'Recent colors' });
   private paletteGrid = h('div', { class: 'cp-swatches palette', 'aria-label': 'Palette' });
+  /** Palette name and size; opens the quick switcher. */
+  private paletteName = h('button', { type: 'button', class: 'cp-pal-name', title: 'Switch palette', 'aria-haspopup': 'menu' });
 
   constructor(editor: Editor, io: PaletteIO) {
     this.editor = editor;
@@ -64,10 +70,11 @@ export class ColorPanel {
       ),
       h('div', { class: 'cp-section-title' }, h('span', null, 'Recent')),
       this.recentRow,
-      h('div', { class: 'cp-section-title' }, h('span', null, 'Palette'), h('span', { class: 'cp-title-actions' }, addColor, paletteMenu)),
+      h('div', { class: 'cp-section-title' }, this.paletteName, h('span', { class: 'cp-title-actions' }, addColor, paletteMenu)),
       this.paletteGrid,
     );
 
+    this.paletteName.addEventListener('click', () => popupMenu(this.paletteName, this.io.switchItems()));
     this.fgSw.addEventListener('click', () => this.setTarget('fg'));
     this.bgSw.addEventListener('click', () => this.setTarget('bg'));
     this.hex.addEventListener('change', () => {
@@ -253,6 +260,12 @@ export class ColorPanel {
       ),
     );
     if (!e.palette.length) this.paletteGrid.append(h('span', { class: 'cp-empty' }, 'Empty palette — use + to add colors'));
+    this.paletteName.replaceChildren(
+      h('span', { class: 'cp-pal-label' }, e.paletteName),
+      h('span', { class: 'cp-pal-count' }, String(e.palette.length)),
+      h('span', { class: 'cp-pal-caret', 'aria-hidden': 'true' }, '▾'),
+    );
+    this.paletteName.setAttribute('aria-label', `Palette: ${e.paletteName}, ${e.palette.length} colors. Switch palette`);
     this.highlightPalette();
   }
 
@@ -280,7 +293,7 @@ export class ColorPanel {
       },
       { label: 'Map image colors to palette…', run: () => this.io.showMapToPalette() },
       '-',
-      ...PALETTE_PRESETS.map((p) => ({ label: `Load ${p.name}`, run: () => e.setPalette(presetColors(p.name)) })),
+      { label: 'Palettes… (browse, create, edit)', run: () => this.io.showPalettes() },
       '-',
       {
         label: 'Colors from active layer',
@@ -289,7 +302,7 @@ export class ColorPanel {
           const colors = d ? extractColors(d, 256) : [];
           if (colors === null) e.toast('The layer has more than 256 colors', true);
           else if (!colors.length) e.toast('The layer is empty');
-          else e.setPalette(colors);
+          else e.setPalette(colors, `Colors of ${e.doc.activeLayer.name}`);
         },
       },
       { label: 'Import palette…', run: () => this.io.importPalette() },

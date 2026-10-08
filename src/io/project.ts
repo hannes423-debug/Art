@@ -46,6 +46,8 @@ export interface ProjectData<C> {
   activeLayer: number;
   activeFrame: number;
   palette: string[];
+  /** Name of the palette (optional; readers may ignore it). */
+  paletteName?: string;
   grid: GridSettings;
   created: string;
   modified: string;
@@ -53,6 +55,7 @@ export interface ProjectData<C> {
 
 export interface ProjectExtras {
   palette: RGBA[];
+  paletteName?: string;
   grid: GridSettings;
   created?: string;
 }
@@ -111,6 +114,7 @@ export async function serializeProject<C>(doc: ArtDocument, extras: ProjectExtra
     activeLayer: doc.activeLayerIndex,
     activeFrame: doc.activeFrame,
     palette: extras.palette.map((c) => toHex(c)),
+    ...(extras.paletteName ? { paletteName: extras.paletteName } : {}),
     grid: { ...extras.grid },
     created: extras.created ?? now,
     modified: now,
@@ -235,5 +239,6 @@ export async function deserializeProject(input: string | ProjectData<unknown>): 
     width: Math.max(1, Math.min(4096, Number(g?.width) || 16)),
     height: Math.max(1, Math.min(4096, Number(g?.height) || 16)),
   };
-  return { doc, extras: { palette, grid, created: typeof data.created === 'string' ? data.created : undefined } };
+  const paletteName = typeof data.paletteName === 'string' && data.paletteName.trim() ? data.paletteName.trim().slice(0, 64) : undefined;
+  return { doc, extras: { palette, paletteName, grid, created: typeof data.created === 'string' ? data.created : undefined } };
 }

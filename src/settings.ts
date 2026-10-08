@@ -62,6 +62,12 @@ export interface PersistedState {
   fg: string;
   bg: string;
   palette: string[];
+  /** Name shown for the working palette. */
+  paletteName?: string;
+  /** Where the working palette comes from: 'builtin:<id>', 'custom:<id>' or '' (edited / from a project). */
+  paletteRef?: string;
+  /** The user's saved palettes. */
+  customPalettes?: { id: string; name: string; colors: string[] }[];
   recent: string[];
   tool: ToolId;
 }
@@ -95,6 +101,13 @@ export function loadState(): Partial<PersistedState> & { settings: Settings; opt
     fg: typeof stored.fg === 'string' ? stored.fg : undefined,
     bg: typeof stored.bg === 'string' ? stored.bg : undefined,
     palette: Array.isArray(stored.palette) ? (stored.palette as string[]).filter((s) => typeof s === 'string') : undefined,
+    paletteName: typeof stored.paletteName === 'string' ? stored.paletteName : undefined,
+    paletteRef: typeof stored.paletteRef === 'string' ? stored.paletteRef : undefined,
+    customPalettes: Array.isArray(stored.customPalettes)
+      ? (stored.customPalettes as { id?: unknown; name?: unknown; colors?: unknown }[])
+          .filter((p) => p && typeof p.id === 'string' && typeof p.name === 'string' && Array.isArray(p.colors))
+          .map((p) => ({ id: p.id as string, name: p.name as string, colors: (p.colors as unknown[]).filter((c): c is string => typeof c === 'string') }))
+      : undefined,
     recent: Array.isArray(stored.recent) ? (stored.recent as string[]).filter((s) => typeof s === 'string') : undefined,
     tool: typeof stored.tool === 'string' ? (stored.tool as ToolId) : undefined,
   };

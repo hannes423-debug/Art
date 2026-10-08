@@ -70,6 +70,7 @@ The format is open and may be used freely by other tools.
 | `activeLayer` | integer | no | Index into `layers` of the layer selected when saved. |
 | `activeFrame` | integer | no | Index into `frames` of the frame selected when saved. |
 | `palette` | array | no | Palette colors as `#rrggbb` or `#rrggbbaa` strings. |
+| `paletteName` | string | no | Name of that palette (for display; readers may ignore it). |
 | `grid` | object | no | Editor grid: `{ "enabled": boolean, "width": px, "height": px }`. |
 | `created`, `modified` | string | no | ISO-8601 timestamps. |
 

@@ -1,14 +1,40 @@
 import { type RGBA, parseHex, toHex } from './color';
 
+export type PaletteCategory = 'Consoles' | 'Computers' | 'Artist palettes' | 'Basic';
+
 export interface PalettePreset {
+  /** Stable id (used to remember the selected palette). */
+  id: string;
   name: string;
+  category: PaletteCategory;
   colors: string[];
+  /** Where the colors come from (shown in the palette browser). */
+  note?: string;
 }
 
-/** Built-in palettes. All are freely usable, widely published color sets. */
+/**
+ * Rounds 8-bit colors to the 15-bit RGB555 color space of the Game Boy
+ * Advance and SNES (5 bits per channel), so a palette only holds colors
+ * that hardware can actually show.
+ */
+export function quantizeRGB555(hex: string): string {
+  const c = parseHex(hex)!;
+  const q = (v: number) => Math.round((Math.round((v * 31) / 255) * 255) / 31);
+  return toHex({ r: q(c.r), g: q(c.g), b: q(c.b), a: 255 }, false).slice(1);
+}
+
+/**
+ * Built-in palettes. Palette colors are plain data; these are widely
+ * published sets whose authors allow free use, or palettes made for Art.
+ * The GBA and SNES have no fixed palette (games pick colors from 32 768),
+ * so their entries are original starter palettes limited to RGB555.
+ */
 export const PALETTE_PRESETS: PalettePreset[] = [
   {
+    id: 'db32',
     name: 'DawnBringer 32',
+    category: 'Artist palettes',
+    note: 'By DawnBringer, free to use',
     colors: [
       '000000',
       '222034',
@@ -45,7 +71,34 @@ export const PALETTE_PRESETS: PalettePreset[] = [
     ],
   },
   {
+    id: 'db16',
+    name: 'DawnBringer 16',
+    category: 'Artist palettes',
+    note: 'By DawnBringer, free to use',
+    colors: [
+      '140c1c',
+      '442434',
+      '30346d',
+      '4e4a4e',
+      '854c30',
+      '346524',
+      'd04648',
+      '757161',
+      '597dce',
+      'd27d2c',
+      '8595a1',
+      '6daa2c',
+      'd2aa99',
+      '6dc2ca',
+      'dad45e',
+      'deeed6',
+    ],
+  },
+  {
+    id: 'pico8',
     name: 'PICO-8',
+    category: 'Consoles',
+    note: 'Fantasy console by Lexaloffle; the 16 standard colors',
     colors: [
       '000000',
       '1d2b53',
@@ -65,12 +118,245 @@ export const PALETTE_PRESETS: PalettePreset[] = [
       'ffccaa',
     ],
   },
-  { name: 'Game Boy', colors: ['0f380f', '306230', '8bac0f', '9bbc0f'] },
-  { name: 'Grayscale', colors: ['000000', '242424', '494949', '6d6d6d', '929292', 'b6b6b6', 'dbdbdb', 'ffffff'] },
+  {
+    id: 'gameboy',
+    name: 'Game Boy',
+    category: 'Consoles',
+    note: 'The four shades of the original green screen',
+    colors: ['0f380f', '306230', '8bac0f', '9bbc0f'],
+  },
+  {
+    id: 'gameboy-gray',
+    name: 'Game Boy Pocket',
+    category: 'Consoles',
+    note: 'Four gray shades',
+    colors: ['000000', '555555', 'aaaaaa', 'ffffff'],
+  },
+  {
+    id: 'gba32',
+    name: 'GBA-style 32',
+    category: 'Consoles',
+    note: 'Original starter palette for Art in GBA 15-bit color (RGB555)',
+    colors: [
+      '000000',
+      '2d1b2e',
+      '4a2c40',
+      '6b3a4a',
+      '9c4a4a',
+      'd6603a',
+      'f2a65a',
+      'fbe08a',
+      'f7f7f7',
+      'b8c4d0',
+      '7b8a9e',
+      '4a566b',
+      '262c3b',
+      '1e3a5f',
+      '2c6fb5',
+      '4fa4f7',
+      '9ad7ff',
+      '1d4d2b',
+      '2f8a3e',
+      '68c24a',
+      'bfe86b',
+      '5a2a7a',
+      '9a4bc2',
+      'e07ad6',
+      '7a1e2a',
+      'c22c3a',
+      'ff6b6b',
+      '6e4a2a',
+      'a8743a',
+      'd9b07a',
+      '2a8a8a',
+      '7ae0d0',
+    ].map(quantizeRGB555),
+  },
+  {
+    id: 'nes',
+    name: 'NES',
+    category: 'Consoles',
+    note: 'A commonly used approximation of the NES (2C02) colors; real output varies by TV',
+    colors: [
+      '000000',
+      'fcfcfc',
+      'f8f8f8',
+      'bcbcbc',
+      '7c7c7c',
+      'a4e4fc',
+      '3cbcfc',
+      '0078f8',
+      '0000fc',
+      'b8b8f8',
+      '6888fc',
+      '0058f8',
+      '0000bc',
+      'd8b8f8',
+      '9878f8',
+      '6844fc',
+      '4428bc',
+      'f8b8f8',
+      'f878f8',
+      'd800cc',
+      '940084',
+      'f8a4c0',
+      'f85898',
+      'e40058',
+      'a80020',
+      'f0d0b0',
+      'f87858',
+      'f83800',
+      'a81000',
+      'fce0a8',
+      'fca044',
+      'e45c10',
+      '881400',
+      'f8d878',
+      'f8b800',
+      'ac7c00',
+      '503000',
+      'd8f878',
+      'b8f818',
+      '00b800',
+      '007800',
+      'b8f8b8',
+      '58d854',
+      '00a800',
+      '006800',
+      'b8f8d8',
+      '58f898',
+      '00a844',
+      '005800',
+      '00fcfc',
+      '00e8d8',
+      '008888',
+      '004058',
+      'f8d8f8',
+      '787878',
+    ],
+  },
+  {
+    id: 'snes16',
+    name: 'SNES-style 16',
+    category: 'Consoles',
+    note: 'Original starter palette for Art in SNES 15-bit color (RGB555)',
+    colors: [
+      '000000',
+      'f8f8f8',
+      'a0a0b0',
+      '505068',
+      '203060',
+      '3070c0',
+      '70b8f8',
+      '206030',
+      '48a048',
+      'a8e070',
+      '783018',
+      'c86030',
+      'f8b060',
+      'f8e8a0',
+      'a03070',
+      'f070b0',
+    ].map(quantizeRGB555),
+  },
+  {
+    id: 'c64',
+    name: 'Commodore 64',
+    category: 'Computers',
+    note: 'Colors measured by Philip “Pepto” Timmermann',
+    colors: [
+      '000000',
+      'ffffff',
+      '68372b',
+      '70a4b2',
+      '6f3d86',
+      '588d43',
+      '352879',
+      'b8c76f',
+      '6f4f25',
+      '433900',
+      '9a6759',
+      '444444',
+      '6c6c6c',
+      '9ad284',
+      '6c5eb5',
+      '959595',
+    ],
+  },
+  {
+    id: 'sweetie16',
+    name: 'Sweetie 16',
+    category: 'Artist palettes',
+    note: 'By GrafxKid, free to use',
+    colors: [
+      '1a1c2c',
+      '5d275d',
+      'b13e53',
+      'ef7d57',
+      'ffcd75',
+      'a7f070',
+      '38b764',
+      '257179',
+      '29366f',
+      '3b5dc9',
+      '41a6f6',
+      '73eff7',
+      'f4f4f4',
+      '94b0c2',
+      '566c86',
+      '333c57',
+    ],
+  },
+  {
+    id: 'endesga32',
+    name: 'Endesga 32',
+    category: 'Artist palettes',
+    note: 'By Endesga, free to use',
+    colors: [
+      'be4a2f',
+      'd77643',
+      'ead4aa',
+      'e4a672',
+      'b86f50',
+      '733e39',
+      '3e2731',
+      'a22633',
+      'e43b44',
+      'f77622',
+      'feae34',
+      'fee761',
+      '63c74d',
+      '3e8948',
+      '265c42',
+      '193c3e',
+      '124e89',
+      '0099db',
+      '2ce8f5',
+      'ffffff',
+      'c0cbdc',
+      '8b9bb4',
+      '5a6988',
+      '3a4466',
+      '262b44',
+      '181425',
+      'ff0044',
+      '68386c',
+      'b55088',
+      'f6757a',
+      'e8b796',
+      'c28569',
+    ],
+  },
+  { id: 'gray8', name: 'Grayscale', category: 'Basic', colors: ['000000', '242424', '494949', '6d6d6d', '929292', 'b6b6b6', 'dbdbdb', 'ffffff'] },
+  { id: '1bit', name: '1-bit', category: 'Basic', note: 'Black and white', colors: ['000000', 'ffffff'] },
 ];
 
-export function presetColors(name: string): RGBA[] {
-  const p = PALETTE_PRESETS.find((x) => x.name === name) ?? PALETTE_PRESETS[0];
+export function findPreset(idOrName: string): PalettePreset | undefined {
+  return PALETTE_PRESETS.find((x) => x.id === idOrName || x.name === idOrName);
+}
+
+export function presetColors(idOrName: string): RGBA[] {
+  const p = findPreset(idOrName) ?? PALETTE_PRESETS[0];
   return p.colors.map((c) => parseHex(c)!);
 }
 
@@ -106,6 +392,12 @@ export function parsePalette(text: string): RGBA[] | null {
     }
   }
   return colors.length ? colors.slice(0, 1024) : null;
+}
+
+/** The palette's own name, if the file has one (GIMP "Name:" line). */
+export function paletteNameFromFile(text: string): string | null {
+  const m = /^Name:\s*(.+)$/m.exec(text);
+  return m ? m[1].trim().slice(0, 64) || null : null;
 }
 
 export function toGpl(colors: RGBA[], name = 'Art palette'): string {

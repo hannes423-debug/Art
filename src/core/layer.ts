@@ -50,9 +50,15 @@ export class Layer {
 
   /** Deep copy with fresh surfaces. */
   clone(name = this.name): Layer {
+    // Linked cels (the same surface in several frames) stay linked in the copy.
+    const copies = new Map<Surface, Surface>();
     const l = new Layer(
       name,
-      this.cels.map((c) => c.clone()),
+      this.cels.map((c) => {
+        let copy = copies.get(c);
+        if (!copy) copies.set(c, (copy = c.clone()));
+        return copy;
+      }),
     );
     l.visible = this.visible;
     l.opacity = this.opacity;

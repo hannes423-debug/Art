@@ -3,7 +3,7 @@ import { ArtDocument } from './core/document';
 import { Emitter } from './core/emitter';
 import { History } from './core/history';
 import { type PaintParams, PaintSession } from './core/paint';
-import { nearestColorFinder, presetColors } from './core/palette';
+import { PALETTE_PRESETS, findPreset, nearestColorFinder, presetColors } from './core/palette';
 import type { SelectionMode, SelectionModify } from './core/selection';
 import { type ClipImage, addLayer, changeSelection, clearPixels, copyPixels } from './ops';
 import { Renderer } from './render/renderer';
@@ -15,6 +15,16 @@ import { GradientTool, ShadeTool, TextTool } from './tools/extra-tools';
 import { BrushTool, EraserTool, PencilTool, type SymmetryAxes } from './tools/paint-tools';
 import { EllipseTool, LineTool, RectTool } from './tools/shape-tools';
 import type { Tool, ToolId, ToolOptions } from './tools/tool';
+
+/** A palette the user saved (stored in the browser). */
+export interface CustomPalette {
+  id: string;
+  name: string;
+  colors: RGBA[];
+}
+
+/** Where the working palette comes from; null = edited or loaded with a project. */
+export type PaletteRef = { kind: 'builtin' | 'custom'; id: string } | null;
 
 export interface EditorEvents {
   /** A different document was loaded. */
@@ -64,6 +74,10 @@ export class Editor extends Emitter<EditorEvents> {
   fg: RGBA = { ...BLACK };
   bg: RGBA = { ...WHITE };
   palette: RGBA[];
+  /** Name of the working palette (shown in the palette panel). */
+  paletteName = 'DawnBringer 32';
+  paletteRef: PaletteRef = { kind: 'builtin', id: 'db32' };
+  customPalettes: CustomPalette[] = [];
   recent: RGBA[] = [];
   options: ToolOptions;
   settings: Settings;
@@ -87,7 +101,13 @@ export class Editor extends Emitter<EditorEvents> {
     this.options = state.options;
     if (state.fg) this.fg = parseHex(state.fg) ?? this.fg;
     if (state.bg) this.bg = parseHex(state.bg) ?? this.bg;
-    this.palette = state.palette?.map((h) => parseHex(h)).filter((c): c is RGBA => !!c) ?? presetColors('DawnBringer 32');
+    this.palette = state.palette?.map((h) => parseHex(h)).filter((c): c is RGBA => !!c) ?? presetColors('db32');
+    const hexes = (list: string[]) => list.map((h) => parseHex(h)).filter((c): c is RGBA => !!c);
+    this.customPalettes = (state.customPalettes ?? []).map((p) => ({ id: p.id, name: p.name, colors: hexes(p.colors) }));
+    if (state.paletteName !== undefined) this.paletteName = state.paletteName;
+    else if (state.palette) this.paletteName = 'Palette'; // saved by an older version: unknown origin
+    if (state.paletteRef !== undefined) this.paletteRef = parseRef(state.paletteRef);
+    else if (state.palette) this.paletteRef = null;
     this.recent = state.recent?.map((h) => parseHex(h)).filter((c): c is RGBA => !!c) ?? [];
 
     const lowMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
@@ -220,9 +240,101 @@ export class Editor extends Emitter<EditorEvents> {
     this.persist();
   }
 
-  setPalette(colors: RGBA[]): void {
+  /**
+   * Changes the colors of the working palette. A custom palette is updated
+   * too; a built-in one becomes an edited copy (built-ins never change).
+   * `name` starts a new, unsaved palette (e.g. one loaded with a project).
+   */
+  setPalette(colors: RGBA[], name?: string): void {
     this.palette = colors.map((c) => ({ ...c }));
     this.snapFinder = null;
+    const ref = this.paletteRef;
+    if (name !== undefined) {
+      this.paletteName = name;
+      this.paletteRef = null;
+    } else if (ref?.kind === 'custom') {
+      const p = this.customPalettes.find((x) => x.id === ref.id);
+      if (p) p.colors = this.palette.map((c) => ({ ...c }));
+      else this.paletteRef = null;
+    } else if (ref?.kind === 'builtin') {
+      this.paletteRef = null;
+      this.paletteName = `${this.paletteName} (edited)`;
+    }
+    this.emit('palette');
+    this.persist();
+  }
+
+  /**
+   * Uses colors loaded with a project: re-selects the built-in or saved
+   * palette with exactly these colors (preferring one with the same name),
+   * otherwise keeps them as an unsaved palette called `name`.
+   */
+  adoptPalette(colors: RGBA[], name: string): void {
+    const key = (list: RGBA[]) => list.map((c) => toHex(c, true)).join(',');
+    const k = key(colors);
+    const candidates: { ref: Exclude<PaletteRef, null>; name: string }[] = [
+      ...this.customPalettes.filter((p) => key(p.colors) === k).map((p) => ({ ref: { kind: 'custom' as const, id: p.id }, name: p.name })),
+      ...PALETTE_PRESETS.filter((p) => key(presetColors(p.id)) === k).map((p) => ({ ref: { kind: 'builtin' as const, id: p.id }, name: p.name })),
+    ];
+    const hit = candidates.find((c) => c.name === name) ?? candidates[0];
+    if (hit) this.selectPalette(hit.ref);
+    else this.setPalette(colors, name);
+  }
+
+  /** Makes a built-in or saved palette the working palette. */
+  selectPalette(ref: Exclude<PaletteRef, null>): boolean {
+    if (ref.kind === 'builtin') {
+      const p = findPreset(ref.id);
+      if (!p) return false;
+      this.palette = presetColors(p.id);
+      this.paletteName = p.name;
+    } else {
+      const p = this.customPalettes.find((x) => x.id === ref.id);
+      if (!p) return false;
+      this.palette = p.colors.map((c) => ({ ...c }));
+      this.paletteName = p.name;
+    }
+    this.paletteRef = ref;
+    this.snapFinder = null;
+    if (this.settings.paletteLock) {
+      this.fg = this.snapColor(this.fg);
+      this.bg = this.snapColor(this.bg);
+      this.emit('colors');
+    }
+    this.emit('palette');
+    this.persist();
+    return true;
+  }
+
+  /** Saves colors as a new custom palette and makes it the working palette. */
+  createCustomPalette(name: string, colors: RGBA[]): CustomPalette {
+    const ids = new Set(this.customPalettes.map((p) => p.id));
+    let id = `p${Date.now().toString(36)}`;
+    while (ids.has(id)) id += 'x';
+    const p: CustomPalette = { id, name: name.trim() || 'My palette', colors: colors.map((c) => ({ ...c })) };
+    this.customPalettes = [...this.customPalettes, p];
+    this.selectPalette({ kind: 'custom', id });
+    return p;
+  }
+
+  updateCustomPalette(id: string, patch: { name?: string; colors?: RGBA[] }): void {
+    const p = this.customPalettes.find((x) => x.id === id);
+    if (!p) return;
+    if (patch.name !== undefined) p.name = patch.name.trim() || p.name;
+    if (patch.colors) p.colors = patch.colors.map((c) => ({ ...c }));
+    if (this.paletteRef?.kind === 'custom' && this.paletteRef.id === id) {
+      this.palette = p.colors.map((c) => ({ ...c }));
+      this.paletteName = p.name;
+      this.snapFinder = null;
+    }
+    this.emit('palette');
+    this.persist();
+  }
+
+  /** Deletes a saved palette. If it is in use, its colors stay as an unsaved palette. */
+  deleteCustomPalette(id: string): void {
+    this.customPalettes = this.customPalettes.filter((p) => p.id !== id);
+    if (this.paletteRef?.kind === 'custom' && this.paletteRef.id === id) this.paletteRef = null;
     this.emit('palette');
     this.persist();
   }
@@ -590,8 +702,16 @@ export class Editor extends Emitter<EditorEvents> {
       fg: toHex(this.fg, true),
       bg: toHex(this.bg, true),
       palette: this.palette.map((c) => toHex(c, true)),
+      paletteName: this.paletteName,
+      paletteRef: this.paletteRef ? `${this.paletteRef.kind}:${this.paletteRef.id}` : '',
+      customPalettes: this.customPalettes.map((p) => ({ id: p.id, name: p.name, colors: p.colors.map((c) => toHex(c, true)) })),
       recent: this.recent.map((c) => toHex(c, true)),
       tool: this.tool.id,
     });
   }
+}
+
+function parseRef(s: string): PaletteRef {
+  const m = /^(builtin|custom):(.+)$/.exec(s);
+  return m ? { kind: m[1] as 'builtin' | 'custom', id: m[2] } : null;
 }

@@ -223,3 +223,39 @@ test('touch and hold picks a color with a loupe instead of painting', async ({ p
   await touch(client, 'touchEnd', []);
   expect(await layerPixel(page, 12, 12)).toEqual([10, 120, 220, 255]);
 });
+
+test('palettes work by touch and their dialogs fit the phone screen', async ({ page }) => {
+  await newImage(page, 16, 16);
+  await page.locator('.bottombar').getByRole('button', { name: 'Colors' }).click();
+  const sheet = page.locator('.drawer.bottom');
+  const nameBtn = sheet.locator('.cp-pal-name');
+  await nameBtn.tap();
+  const menu = page.locator('.popup-menu');
+  await expect(menu).toBeVisible();
+  const vp = page.viewportSize()!;
+  const mb = (await menu.boundingBox())!;
+  expect(mb.x).toBeGreaterThanOrEqual(0);
+  expect(mb.x + mb.width).toBeLessThanOrEqual(vp.width + 1);
+  await page.getByRole('menuitem', { name: 'Manage palettes…' }).tap();
+  const dlg = page.locator('dialog.dialog');
+  await expect(dlg).toBeVisible();
+  const db = (await dlg.boundingBox())!;
+  expect(db.x).toBeGreaterThanOrEqual(0);
+  expect(db.x + db.width).toBeLessThanOrEqual(vp.width + 1);
+  expect(db.y + db.height).toBeLessThanOrEqual(vp.height + 1);
+  // Nothing scrolls sideways inside the dialog.
+  expect(await dlg.locator('.dialog-body').evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  // Tap a palette far down the list (the list scrolls inside the dialog).
+  const nes = dlg.locator('.pal-row', { hasText: 'NES' }).first().locator('.pal-pick');
+  await nes.scrollIntoViewIfNeeded();
+  await nes.tap();
+  await expect(dlg.locator('.pal-row.active')).toContainText('NES');
+  await dlg.getByRole('button', { name: 'Done' }).tap();
+  await expect(nameBtn).toContainText('NES');
+  // Tapping a swatch sets the color.
+  const sw = sheet.locator('.cp-swatches.palette .swatch').nth(7);
+  const hex = await sw.getAttribute('data-hex');
+  await sw.tap();
+  const fg = await page.evaluate(() => (window as any).art.editor.fg);
+  expect('#' + [fg.r, fg.g, fg.b].map((v: number) => v.toString(16).padStart(2, '0')).join('') + 'ff').toBe(hex);
+});

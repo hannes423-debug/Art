@@ -104,17 +104,27 @@ export function deleteLayer(doc: ArtDocument, history: History, layer = doc.acti
 interface Structure {
   layers: Layer[];
   groupIds: (number | null)[];
+  visible: boolean[];
   groups: LayerGroup[];
   active: Layer;
 }
 
 function snapshotStructure(doc: ArtDocument): Structure {
-  return { layers: [...doc.layers], groupIds: doc.layers.map((l) => l.group), groups: doc.groups.map((g) => ({ ...g })), active: doc.activeLayer };
+  return {
+    layers: [...doc.layers],
+    groupIds: doc.layers.map((l) => l.group),
+    visible: doc.layers.map((l) => l.visible),
+    groups: doc.groups.map((g) => ({ ...g })),
+    active: doc.activeLayer,
+  };
 }
 
 function restoreStructure(doc: ArtDocument, s: Structure): void {
   doc.layers = [...s.layers];
-  doc.layers.forEach((l, i) => (l.group = s.groupIds[i]));
+  doc.layers.forEach((l, i) => {
+    l.group = s.groupIds[i];
+    l.visible = s.visible[i];
+  });
   doc.groups = s.groups.map((g) => ({ ...g }));
   doc.setActiveLayer(s.active);
   doc.emit('active');
@@ -480,14 +490,51 @@ export function replaceColor(doc: ArtDocument, history: History, o: ReplaceColor
  * Optional ordered dithering mixes the two nearest palette colors.
  * Returns the number of pixels changed; one undo step.
  */
-export function mapToPalette(doc: ArtDocument, history: History, palette: RGBA[], o: { allLayers: boolean; allFrames: boolean; dither: boolean }): number {
+export function mapToPalette(
+  doc: ArtDocument,
+  history: History,
+  palette: RGBA[],
+  o: { allLayers: boolean; allFrames: boolean; dither: boolean; keepOriginal?: boolean; label?: string },
+): number {
   if (!palette.length) return 0;
   const near = nearestColorFinder(palette);
-  const layers = o.allLayers ? doc.layers.filter((l) => l.visible) : [doc.activeLayer];
+  const layers = o.allLayers ? doc.layers.filter((l) => doc.isShown(l)) : [doc.activeLayer];
   const frames = o.allFrames ? doc.frames.map((_, i) => i) : [doc.activeFrame];
   const sel = doc.selection.mask;
   const area = doc.selection.bounds ?? { x: 0, y: 0, w: doc.width, h: doc.height };
-  const w = doc.width;
+  if (o.keepOriginal) {
+    // Map copies of the layers and hide the originals: nothing is lost, and
+    // showing the original again (or deleting the copy) brings it back.
+    let changed = 0;
+    const copies = layers.map((l) => {
+      const copy = l.clone(`${l.name} (${o.label ?? 'palette'})`);
+      const seen = new Set<Surface>();
+      for (const f of frames) {
+        const cel = copy.cels[f];
+        if (seen.has(cel) || !cel.data) continue;
+        seen.add(cel);
+        changed += mapCel(cel.data, doc.width, area, sel, near, o.dither);
+        cel.touch(area);
+      }
+      return { original: l, copy };
+    });
+    if (!changed) return 0;
+    const active = doc.activeLayer;
+    structureChange(
+      doc,
+      history,
+      'Map to palette (copy)',
+      () => {
+        for (const { original, copy } of copies) {
+          doc.layers.splice(doc.layers.indexOf(original) + 1, 0, copy);
+          original.visible = false;
+        }
+        doc.setActiveLayer(copies.find((c) => c.original === active)?.copy ?? copies[0].copy);
+      },
+      copies.reduce((s, c) => s + bytesOfLayer(c.copy), 256),
+    );
+    return changed;
+  }
   const patches: Command[] = [];
   let changed = 0;
   const seen = new Set<Surface>();
@@ -496,40 +543,9 @@ export function mapToPalette(doc: ArtDocument, history: History, palette: RGBA[]
       const cel = layer.cels[f];
       if (seen.has(cel) || !cel.data) continue;
       seen.add(cel);
-      const data = cel.data;
       const rec = new TileRecorder(cel);
       rec.record(area);
-      let n = 0;
-      for (let y = area.y; y < area.y + area.h; y++) {
-        for (let x = area.x; x < area.x + area.w; x++) {
-          const i = y * w + x;
-          if (sel && sel[i] < 128) continue;
-          const p = i * 4;
-          if (data[p + 3] === 0) continue;
-          const r = data[p];
-          const g = data[p + 1];
-          const b = data[p + 2];
-          let c = near(r, g, b);
-          if (o.dither) {
-            // Ordered dither: offset the color along its error by a Bayer
-            // threshold, so pixels halfway between two palette colors split
-            // 50/50 and exact palette colors stay unchanged.
-            const k = 4 * (bayerThreshold(x, y) - 0.5);
-            const er = r - (c >> 16);
-            const eg = g - ((c >> 8) & 255);
-            const eb = b - (c & 255);
-            c = near(clamp255(r + er * k), clamp255(g + eg * k), clamp255(b + eb * k));
-          }
-          const nr = c >> 16;
-          const ng = (c >> 8) & 255;
-          const nb = c & 255;
-          if (nr === r && ng === g && nb === b) continue;
-          data[p] = nr;
-          data[p + 1] = ng;
-          data[p + 2] = nb;
-          n++;
-        }
-      }
+      const n = mapCel(cel.data, doc.width, area, sel, near, o.dither);
       changed += n;
       if (n) {
         cel.touch(area);
@@ -541,6 +557,63 @@ export function mapToPalette(doc: ArtDocument, history: History, palette: RGBA[]
   }
   if (patches.length) history.push(patches.length === 1 ? patches[0] : new CompoundCommand('Map to palette', patches));
   return changed;
+}
+
+/** Maps the pixels of one cel inside `area` (and the selection) to the palette. Returns how many changed. */
+function mapCel(data: Pixels, w: number, area: Rect, sel: Uint8Array | null, near: (r: number, g: number, b: number) => number, dither: boolean): number {
+  let n = 0;
+  for (let y = area.y; y < area.y + area.h; y++) {
+    for (let x = area.x; x < area.x + area.w; x++) {
+      const i = y * w + x;
+      if (sel && sel[i] < 128) continue;
+      const p = i * 4;
+      if (data[p + 3] === 0) continue;
+      const r = data[p];
+      const g = data[p + 1];
+      const b = data[p + 2];
+      let c = near(r, g, b);
+      if (dither) {
+        // Ordered dither: offset the color along its error by a Bayer
+        // threshold, so pixels halfway between two palette colors split
+        // 50/50 and exact palette colors stay unchanged.
+        const k = 4 * (bayerThreshold(x, y) - 0.5);
+        const er = r - (c >> 16);
+        const eg = g - ((c >> 8) & 255);
+        const eb = b - (c & 255);
+        c = near(clamp255(r + er * k), clamp255(g + eg * k), clamp255(b + eb * k));
+      }
+      const nr = c >> 16;
+      const ng = (c >> 8) & 255;
+      const nb = c & 255;
+      if (nr === r && ng === g && nb === b) continue;
+      data[p] = nr;
+      data[p + 1] = ng;
+      data[p + 2] = nb;
+      n++;
+    }
+  }
+  return n;
+}
+
+/**
+ * Counts the distinct opaque colors of the visible image (all frames) that
+ * are not in the palette (alpha is ignored). Stops counting at `limit`.
+ */
+export function countOffPalette(doc: ArtDocument, palette: RGBA[], limit = 4096): number {
+  const pal = new Set(palette.map((c) => (c.r << 16) | (c.g << 8) | c.b));
+  const off = new Set<number>();
+  for (let f = 0; f < doc.frames.length; f++) {
+    const d = compositeFrame(doc, f);
+    for (let p = 0; p < d.length; p += 4) {
+      if (d[p + 3] === 0) continue;
+      const k = (d[p] << 16) | (d[p + 1] << 8) | d[p + 2];
+      if (!pal.has(k)) {
+        off.add(k);
+        if (off.size >= limit) return off.size;
+      }
+    }
+  }
+  return off.size;
 }
 
 function clamp255(v: number): number {

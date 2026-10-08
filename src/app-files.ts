@@ -3,7 +3,7 @@ import { compositeFrame } from './core/composite';
 import { ArtDocument } from './core/document';
 import { cropPixels, resizePixels } from './core/imageops';
 import { Layer } from './core/layer';
-import { parsePalette, toGpl, toHexList } from './core/palette';
+import { paletteNameFromFile, parsePalette, toGpl, toHexList } from './core/palette';
 import { type Pixels, Surface, allocPixels } from './core/surface';
 import type { DocumentInfo } from './editor';
 import { type FileType, type PickedFile, downloadBlob, fileNameFor, hasFileSystemAccess, pickFiles, saveFileAs, shareFile, writeToHandle } from './io/files';
@@ -85,7 +85,12 @@ export class ProjectFiles {
 
   extras(): ProjectExtras {
     const e = this.editor;
-    return { palette: e.palette, grid: e.settings.grid, created: e.info.projectId ? this.created.get(e.info.projectId) : undefined };
+    return {
+      palette: e.palette,
+      paletteName: e.paletteName,
+      grid: e.settings.grid,
+      created: e.info.projectId ? this.created.get(e.info.projectId) : undefined,
+    };
   }
 
   // ----------------------------------------------------------- Autosave
@@ -266,7 +271,7 @@ export class ProjectFiles {
     const e = this.editor;
     e.setDocument(doc, info);
     if (extras) {
-      if (extras.palette.length) e.setPalette(extras.palette);
+      if (extras.palette.length) e.adoptPalette(extras.palette, extras.paletteName ?? `${doc.name} palette`);
       e.updateSettings({ grid: extras.grid });
       if (doc.frames.length > 1 && !e.settings.showTimeline) this.app.toggleTimeline(true);
     }
@@ -611,20 +616,22 @@ export class ProjectFiles {
   async importPalette(): Promise<void> {
     const files = await pickFiles([{ description: 'Palettes', accept: { 'text/plain': ['.gpl', '.hex', '.txt', '.pal'] } }]);
     if (!files.length) return;
-    const colors = parsePalette(await files[0].file.text());
+    const text = await files[0].file.text();
+    const colors = parsePalette(text);
     if (!colors) {
       this.app.toast('No colors found in that file', true);
       return;
     }
-    this.editor.setPalette(colors);
+    // Imported palettes are saved to the palette library, so they stay available.
+    const name = paletteNameFromFile(text) ?? baseName(files[0].file.name);
+    this.editor.createCustomPalette(name, colors);
     this.editor.markChanged();
-    this.app.toast(`Loaded ${colors.length} colors`);
+    this.app.toast(`Imported “${name}” (${colors.length} colors)`);
   }
 
-  async exportPalette(format: 'gpl' | 'hex'): Promise<void> {
-    const colors = this.editor.palette;
-    const text = format === 'gpl' ? toGpl(colors, this.editor.doc.name) : toHexList(colors);
-    await saveFileAs(new Blob([text], { type: 'text/plain' }), fileNameFor(`${this.editor.doc.name} palette`, format), [
+  async exportPalette(format: 'gpl' | 'hex', name = this.editor.paletteName, colors = this.editor.palette): Promise<void> {
+    const text = format === 'gpl' ? toGpl(colors, name) : toHexList(colors);
+    await saveFileAs(new Blob([text], { type: 'text/plain' }), fileNameFor(name, format), [
       { description: 'Palette', accept: { 'text/plain': [`.${format}`] } },
     ]);
   }
