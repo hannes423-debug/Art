@@ -76,6 +76,7 @@ fast and canvas-first.
 - Open PNG, JPEG, WebP, GIF and BMP; import images as layers; drag and drop
 - Export PNG (lossless, exact alpha), JPEG and WebP (where the browser supports it)
 - Projects are saved automatically in the browser and restored when you come back
+- **Recent projects** shows animated thumbnails for multi-frame sprites (the tag around the current frame, with its timing), crisp and transparent; turn them off in Settings
 - Save portable `.artproj` project files ([open format](docs/file-format.md)); on desktop Chrome/Edge, Save writes back to the same file
 - Share exports directly to other apps on mobile
 - Timelapse: every project records small snapshots as you draw (kept in the browser with the project, across sessions); File → Export timelapse… makes an MP4/WebM video, GIF or APNG of any length

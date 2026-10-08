@@ -132,3 +132,54 @@ export function sampleComposite(doc: ArtDocument, frame: number, x: number, y: n
   const p = compositeFrame(doc, frame, { rect: { x, y, w: 1, h: 1 } });
   return [p[0], p[1], p[2], p[3]];
 }
+
+/**
+ * Composites a frame at a nearest-neighbour sample grid: output pixel
+ * (i, j) is the exact composite of document pixel (xs[i], ys[j]). Used for
+ * thumbnails — the cost depends on the thumbnail size, not the document
+ * size, and pixels are never blended with their neighbours. Groups are
+ * isolated exactly as in compositeFrame.
+ */
+export function compositeSampled(doc: ArtDocument, frame: number, xs: Int32Array, ys: Int32Array): Pixels {
+  const w = xs.length;
+  const h = ys.length;
+  const out = allocPixels(w, h);
+  const layers = doc.layers;
+  const blendLayer = (dst: Pixels, layer: Layer) => {
+    if (!layer.visible || layer.opacity <= 0) return;
+    const src = layer.cels[frame]?.data;
+    if (!src) return;
+    for (let j = 0; j < h; j++) {
+      const row = ys[j] * doc.width;
+      for (let i = 0; i < w; i++) {
+        const s = (row + xs[i]) * 4;
+        const a = src[s + 3];
+        if (a === 0) continue;
+        blendPixel(dst, (j * w + i) * 4, src[s], src[s + 1], src[s + 2], (a / 255) * layer.opacity, layer.blendMode);
+      }
+    }
+  };
+  for (let i = 0; i < layers.length; i++) {
+    const group = doc.groupOf(layers[i]);
+    if (!group) {
+      blendLayer(out, layers[i]);
+      continue;
+    }
+    let j = i;
+    while (j + 1 < layers.length && layers[j + 1].group === layers[i].group) j++;
+    if (group.visible && group.opacity > 0) {
+      const tmp = allocPixels(w, h);
+      for (let k = i; k <= j; k++) blendLayer(tmp, layers[k]);
+      blendImage(out, w, h, tmp, w, h, 0, 0, group.opacity, 'normal');
+    }
+    i = j;
+  }
+  return out;
+}
+
+/** Nearest-neighbour sample positions mapping `size` thumbnail pixels onto `src` document pixels. */
+export function sampleGrid(size: number, src: number): Int32Array {
+  const g = new Int32Array(size);
+  for (let i = 0; i < size; i++) g[i] = Math.min(src - 1, Math.floor(((i + 0.5) * src) / size));
+  return g;
+}

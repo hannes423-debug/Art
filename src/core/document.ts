@@ -212,6 +212,22 @@ export class ArtDocument extends Emitter<DocEvents> {
     return this.tags.find((t) => frame >= t.from && frame <= t.to);
   }
 
+  /**
+   * Frame order of the animation around `frame`: the tag containing it
+   * (in the tag's direction) or every frame. Used by playback and previews.
+   */
+  animationOrder(frame: number): number[] {
+    const tag = this.tagAt(frame);
+    const from = tag ? tag.from : 0;
+    const to = tag ? tag.to : this.frames.length - 1;
+    const fwd: number[] = [];
+    for (let i = from; i <= to; i++) fwd.push(i);
+    if (!tag || tag.direction === 'forward') return fwd;
+    if (tag.direction === 'reverse') return fwd.reverse();
+    // Ping-pong: there and back without repeating the ends.
+    return [...fwd, ...fwd.slice(1, -1).reverse()];
+  }
+
   setTags(tags: Tag[]): void {
     this.tags = cloneTags(tags);
     this.emit('frames');

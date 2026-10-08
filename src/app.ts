@@ -33,6 +33,7 @@ import type { RGBA } from './core/color';
 import { fileNameFor, pickFiles, saveFileAs } from './io/files';
 import { LayersPanel } from './ui/layers-panel';
 import { QuickBar } from './ui/quick-bar';
+import { thumbAnimator } from './ui/thumb-animator';
 import { paletteBrowserDialog, paletteSwitchItems } from './ui/palette-browser';
 import { TimelapseRecorder } from './timelapse';
 import { type TimelapseFormat, renderTimelapse } from './timelapse-export';
@@ -71,6 +72,8 @@ export class App {
   private readonly stage: HTMLElement;
   private readonly quickBar: QuickBar;
   readonly timelapse: TimelapseRecorder;
+  /** The shared animated-thumbnail player (exposed for diagnostics and tests). */
+  readonly thumbs = thumbAnimator;
   readonly reference: ReferenceWindow;
   private readonly canvas: HTMLCanvasElement;
   private readonly toolbar: Toolbar;
@@ -215,7 +218,11 @@ export class App {
     e.on('document', () => this.updateTitle());
     e.history.on('change', () => this.updateUndo());
     e.on('view', () => this.showZoomHud());
-    e.on('settings', () => this.applyPanels());
+    e.on('settings', () => {
+      this.applyPanels();
+      thumbAnimator.setEnabled(e.settings.animatedThumbs);
+    });
+    thumbAnimator.setEnabled(e.settings.animatedThumbs);
     e.on('hint', (t) => {
       if (this.layout === 'mobile' && t) this.flashHud(t);
     });

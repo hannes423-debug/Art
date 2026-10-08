@@ -8,6 +8,7 @@ import type { ProjectMeta } from '../io/storage';
 import { colorMask, countOffPalette, mapToPalette, replaceColor, resizeCanvas, scaleImage, setTags } from '../ops';
 import type { TouchMode } from '../settings';
 import { type TimelapseFormat, videoMime } from '../timelapse-export';
+import { crispSize, thumbAnimator } from './thumb-animator';
 import { type TextFont, type TextStyle, renderText } from '../tools/text-render';
 import { checkbox, confirmDialog, field, numberInput, openDialog, readNumber, selectInput } from './dialog';
 import { formatShortcut, h, icon } from './dom';
@@ -939,6 +940,7 @@ export function settingsDialog(app: App): void {
     s.wheelZoom ? 'zoom' : 'pan',
   );
   const rotate = checkbox('Rotate the canvas with two fingers', s.rotateGesture);
+  const animThumbs = checkbox('Animated thumbnails (play animations in the project list)', s.animatedThumbs);
   const quickShape = selectInput(
     [
       { value: 'touch', label: 'With pen and touch' },
@@ -977,6 +979,7 @@ export function settingsDialog(app: App): void {
       h('h3', { class: 'dialog-section' }, 'View'),
       pixelGrid.el,
       smooth.el,
+      animThumbs.el,
       field('Onion skin opacity', onion),
       h('h3', { class: 'dialog-section' }, 'Storage'),
       storage,
@@ -996,6 +999,7 @@ export function settingsDialog(app: App): void {
             onionOpacity: Number(onion.value),
             quickShape: quickShape.value as 'touch' | 'always' | 'off',
             quickBar: quickBar.value as 'auto' | 'left' | 'right' | 'off',
+            animatedThumbs: animThumbs.input.checked,
           }),
       },
     ],
@@ -1116,7 +1120,10 @@ export function projectsDialog(app: App, projects: ProjectMeta[]): void {
       { label: 'Open file…', onClick: () => void app.open() },
       { label: 'Close', primary: true },
     ],
-    onClose: () => urls.forEach((u) => URL.revokeObjectURL(u)),
+    onClose: () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+      list.querySelectorAll('canvas').forEach((c) => thumbAnimator.detach(c));
+    },
   });
   const render = (items: ProjectMeta[]) => {
     list.replaceChildren();
@@ -1126,10 +1133,27 @@ export function projectsDialog(app: App, projects: ProjectMeta[]): void {
     }
     for (const p of items) {
       const thumb = h('div', { class: 'project-thumb' });
-      if (p.thumbnail) {
+      const animated = p.anim && p.anim.durations.length > 1 && app.editor.settings.animatedThumbs;
+      if (animated) {
+        // Animated preview, played by the shared animator (removed with the dialog).
+        const a = p.anim!;
+        const size = crispSize(a.frameW, a.frameH, THUMB_BOX);
+        const c = h('canvas', { class: 'project-anim', 'aria-label': `Animated preview, ${a.durations.length} frames` });
+        c.style.width = `${size.w}px`;
+        c.style.height = `${size.h}px`;
+        thumb.append(c);
+        thumbAnimator.attach(c, a);
+      } else if (p.thumbnail) {
         const url = URL.createObjectURL(p.thumbnail);
         urls.push(url);
-        thumb.append(h('img', { src: url, alt: '', loading: 'lazy' }));
+        const img = h('img', { src: url, alt: '', loading: 'lazy' });
+        // Whole-number zoom so every pixel has the same size.
+        img.addEventListener('load', () => {
+          const size = crispSize(img.naturalWidth, img.naturalHeight, THUMB_BOX);
+          img.style.width = `${size.w}px`;
+          img.style.height = `${size.h}px`;
+        });
+        thumb.append(img);
       }
       const isCurrent = app.editor.info.projectId === p.id;
       const open = h(
@@ -1160,6 +1184,9 @@ export function projectsDialog(app: App, projects: ProjectMeta[]): void {
   };
   render(projects);
 }
+
+/** Thumbnail box in the project list (CSS pixels). */
+const THUMB_BOX = 96;
 
 // ------------------------------------------------------------- Sprite sheet
 

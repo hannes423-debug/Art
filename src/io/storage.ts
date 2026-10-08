@@ -16,6 +16,19 @@ export interface ProjectMeta {
   created: string;
   modified: string;
   thumbnail: Blob | null;
+  /** Animated preview for multi-frame projects (absent for one frame and for projects saved by older versions). */
+  anim?: ThumbnailAnimation;
+}
+
+/**
+ * A small animated preview: the frames of the default animation side by
+ * side in one PNG strip (frameW × frameH each), with each frame's duration.
+ */
+export interface ThumbnailAnimation {
+  strip: Blob;
+  frameW: number;
+  frameH: number;
+  durations: number[];
 }
 
 const DB_NAME = 'art';

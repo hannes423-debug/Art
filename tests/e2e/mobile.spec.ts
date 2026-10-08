@@ -259,3 +259,43 @@ test('palettes work by touch and their dialogs fit the phone screen', async ({ p
   const fg = await page.evaluate(() => (window as any).art.editor.fg);
   expect('#' + [fg.r, fg.g, fg.b].map((v: number) => v.toString(16).padStart(2, '0')).join('') + 'ff').toBe(hex);
 });
+
+test('animated project thumbnails play on a phone and fit the screen', async ({ page }) => {
+  await newImage(page, 6, 6);
+  await page.evaluate(async () => {
+    const e = (window as any).art.editor;
+    const d = e.doc;
+    d.insertFrame(
+      1,
+      { duration: 120 },
+      d.layers.map((l: any) => l.cels[0].clone()),
+    );
+    d.layers[0].cels.forEach((c: any, i: number) => {
+      c.ensureData().fill(0);
+      c.ensureData().set([0, 200, 0, 255], (2 * 6 + i * 3) * 4);
+      c.touch({ x: 0, y: 0, w: 6, h: 6 });
+    });
+    d.emit('frames');
+    d.setActiveFrame(0);
+    e.markChanged();
+    await (window as any).art.save();
+  });
+  await page.waitForFunction(() => !!(window as any).art.editor.info.projectId);
+  await page.evaluate(() => (window as any).art.showProjects());
+  const c = page.locator('.project-thumb canvas');
+  await expect(c).toHaveCount(1);
+  const xs = new Set<number>();
+  for (let i = 0; i < 20; i++) {
+    xs.add(
+      await c.evaluate((el: HTMLCanvasElement) => {
+        const d = el.getContext('2d')!.getImageData(0, 0, el.width, el.height).data;
+        for (let p = 0; p < d.length; p += 4) if (d[p + 1] === 200 && d[p + 3] === 255) return (p / 4) % el.width;
+        return -1;
+      }),
+    );
+    await page.waitForTimeout(25);
+  }
+  expect([...xs].filter((x) => x >= 0).sort()).toEqual([0, 3]);
+  const box = (await page.locator('dialog.dialog').boundingBox())!;
+  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+});

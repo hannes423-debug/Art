@@ -32,6 +32,8 @@ export interface Settings {
   quickBar: 'auto' | 'left' | 'right' | 'off';
   /** Record a timelapse of every project (snapshots stored in the browser). */
   timelapse: boolean;
+  /** Play multi-frame projects in the project list. Off by default when the system asks for reduced motion. */
+  animatedThumbs: boolean;
 }
 
 export function defaultSettings(): Settings {
@@ -53,6 +55,7 @@ export function defaultSettings(): Settings {
     quickShape: 'touch',
     quickBar: 'auto',
     timelapse: true,
+    animatedThumbs: !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches),
   };
 }
 

@@ -2299,12 +2299,15 @@ kbd {
   background: var(--checker);
 }
 
-.project-thumb img {
+.project-thumb img,
+.project-thumb canvas {
   max-width: 100%;
   max-height: 100%;
   width: 96px;
   height: 96px;
   object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
   image-rendering: pixelated;
 }
 

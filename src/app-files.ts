@@ -1,5 +1,5 @@
 import type { App } from './app';
-import { compositeFrame } from './core/composite';
+import { compositeFrame, compositeSampled, sampleGrid } from './core/composite';
 import { ArtDocument } from './core/document';
 import { cropPixels, resizePixels } from './core/imageops';
 import { Layer } from './core/layer';
@@ -12,6 +12,7 @@ import { encodePNG } from './io/png';
 import { PROJECT_EXT, type ProjectExtras, ProjectFormatError, bytesToBase64, deserializeProject, projectToJSON, serializeProject } from './io/project';
 import {
   type ProjectMeta,
+  type ThumbnailAnimation,
   deleteProject,
   getLastProjectId,
   listProjects,
@@ -24,6 +25,13 @@ import {
 import { confirmDialog } from './ui/dialog';
 import type { ExportSettings, NewBackground, SheetSlice } from './ui/dialogs';
 import { spriteSheetDialog } from './ui/dialogs';
+
+/** Longest side of the static library thumbnail. */
+const THUMB_MAX = 160;
+/** Longest side of one frame of an animated thumbnail. */
+const ANIM_FRAME_MAX = 96;
+/** At most this many frames in an animated thumbnail (longer animations are sampled). */
+const ANIM_MAX_FRAMES = 48;
 
 const IMAGE_TYPES: FileType = {
   description: 'Images',
@@ -147,6 +155,7 @@ export class ProjectFiles {
         created,
         modified: data.modified,
         thumbnail: await this.thumbnail(doc),
+        anim: await this.animatedThumbnail(doc).catch(() => undefined),
       };
       await saveProject(meta, data);
       if (e.doc !== doc) return true;
@@ -168,24 +177,75 @@ export class ProjectFiles {
     }
   }
 
+  /** Static thumbnail: the active frame, scaled nearest-neighbour to fit 160 px (pixel art stays crisp). */
   private async thumbnail(doc: ArtDocument): Promise<Blob | null> {
     try {
-      let data = compositeFrame(doc, doc.activeFrame);
-      let w = doc.width;
-      let h = doc.height;
-      const max = 160;
-      if (w > max || h > max) {
-        const s = Math.min(max / w, max / h);
-        const nw = Math.max(1, Math.round(w * s));
-        const nh = Math.max(1, Math.round(h * s));
-        data = resizePixels(data, w, h, nw, nh, 'smooth');
-        w = nw;
-        h = nh;
-      }
+      const k = Math.min(1, THUMB_MAX / Math.max(doc.width, doc.height));
+      const w = Math.max(1, Math.round(doc.width * k));
+      const h = Math.max(1, Math.round(doc.height * k));
+      const data = compositeSampled(doc, doc.activeFrame, sampleGrid(w, doc.width), sampleGrid(h, doc.height));
       return new Blob([(await encodePNG(w, h, data)) as Uint8Array<ArrayBuffer>], { type: 'image/png' });
     } catch {
       return null;
     }
+  }
+
+  private animCache: { key: string; anim: ThumbnailAnimation } | null = null;
+
+  /**
+   * Animated preview: the animation the editor would play from the active
+   * frame (its tag, in the tag's direction, or every frame) with each
+   * frame's duration, as a strip of small frames. Rebuilt only when the
+   * frames, cels, layers or timing change.
+   */
+  private async animatedThumbnail(doc: ArtDocument): Promise<ThumbnailAnimation | undefined> {
+    let order = doc.animationOrder(doc.activeFrame);
+    if (order.length < 2) return undefined;
+    let durations = order.map((f) => doc.frames[f].duration);
+    if (order.length > ANIM_MAX_FRAMES) {
+      // Keep the timing: each kept frame shows for the frames it stands for.
+      const keep: number[] = [];
+      const dur: number[] = [];
+      const step = order.length / ANIM_MAX_FRAMES;
+      for (let i = 0; i < ANIM_MAX_FRAMES; i++) {
+        const a = Math.floor(i * step);
+        const b = Math.floor((i + 1) * step);
+        keep.push(order[a]);
+        dur.push(durations.slice(a, b).reduce((x, y) => x + y, 0));
+      }
+      order = keep;
+      durations = dur;
+    }
+    const key = [
+      doc.width,
+      doc.height,
+      order.join('.'),
+      durations.join('.'),
+      doc.groups.map((g) => `${g.id}:${g.visible}:${g.opacity}`).join(','),
+      doc.layers
+        .map((l) => `${l.id}:${l.visible}:${l.opacity}:${l.blendMode}:${l.group}:${order.map((f) => `${l.cels[f].id}v${l.cels[f].version}`).join('/')}`)
+        .join(','),
+    ].join('|');
+    if (this.animCache?.key === key) return this.animCache.anim;
+    const k = Math.min(1, ANIM_FRAME_MAX / Math.max(doc.width, doc.height));
+    const fw = Math.max(1, Math.round(doc.width * k));
+    const fh = Math.max(1, Math.round(doc.height * k));
+    const xs = sampleGrid(fw, doc.width);
+    const ys = sampleGrid(fh, doc.height);
+    const W = fw * order.length;
+    const strip = allocPixels(W, fh);
+    order.forEach((f, i) => {
+      const px = compositeSampled(doc, f, xs, ys);
+      for (let y = 0; y < fh; y++) strip.set(px.subarray(y * fw * 4, (y + 1) * fw * 4), (y * W + i * fw) * 4);
+    });
+    const anim: ThumbnailAnimation = {
+      strip: new Blob([(await encodePNG(W, fh, strip)) as Uint8Array<ArrayBuffer>], { type: 'image/png' }),
+      frameW: fw,
+      frameH: fh,
+      durations,
+    };
+    this.animCache = { key, anim };
+    return anim;
   }
 
   /**

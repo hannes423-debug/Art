@@ -628,16 +628,7 @@ export class Editor extends Emitter<EditorEvents> {
 
   /** Frame order for playback: the tag around the active frame (with its direction), or every frame. */
   playbackOrder(): number[] {
-    const doc = this.doc;
-    const tag = doc.tagAt(doc.activeFrame);
-    const from = tag ? tag.from : 0;
-    const to = tag ? tag.to : doc.frames.length - 1;
-    const fwd: number[] = [];
-    for (let i = from; i <= to; i++) fwd.push(i);
-    if (!tag || tag.direction === 'forward') return fwd;
-    if (tag.direction === 'reverse') return fwd.reverse();
-    // Ping-pong: there and back without repeating the ends.
-    return [...fwd, ...fwd.slice(1, -1).reverse()];
+    return this.doc.animationOrder(this.doc.activeFrame);
   }
 
   play(): void {
